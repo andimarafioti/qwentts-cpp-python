@@ -1,6 +1,16 @@
 name: qwentts-cpp-python wheels
 
 "on":
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/wheels.yml"
+      - "pyproject.toml"
+      - "setup.py"
+      - "scripts/**"
+      - "src/**"
+      - "tests/**"
   workflow_dispatch:
     inputs:
       qwentts_ref:
@@ -33,7 +43,9 @@ jobs:
     env:
       QWENTTS_CPP_BACKEND: cuda
       QWENTTS_CPP_BUILD_JOBS: "2"
-      QWENTTS_CPP_WHEEL_BUILD_TAG: ${{ inputs.wheel_build_tag }}
+      QWENTTS_CPP_WHEEL_BUILD_TAG: ${{ inputs.wheel_build_tag || '1cu130' }}
+      QWENTTS_REF: ${{ inputs.qwentts_ref || 'eda8b59092b8d7b7142177c599b08909b87f63b4' }}
+      CUDA_ARCHITECTURES: ${{ inputs.cuda_architectures || '75-virtual;80-virtual;86-real;89-real;120a-real;121a-real' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,7 +80,7 @@ jobs:
       - name: Fetch qwentts.cpp
         run: |
           git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
-          git -C third_party/qwentts.cpp checkout "${{ inputs.qwentts_ref }}"
+          git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
           git -C third_party/qwentts.cpp submodule update --init --recursive
 
       - name: Build wheel
@@ -79,7 +91,7 @@ jobs:
             --clean \
             --cmake-arg=-G \
             --cmake-arg=Ninja \
-            --cmake-arg="-DCMAKE_CUDA_ARCHITECTURES=${{ inputs.cuda_architectures }}"
+            --cmake-arg="-DCMAKE_CUDA_ARCHITECTURES=$CUDA_ARCHITECTURES"
           python -m build --wheel
           mkdir -p wheelhouse
           cp dist/*.whl wheelhouse/
