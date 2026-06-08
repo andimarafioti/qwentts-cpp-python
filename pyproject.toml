@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=77.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qwentts-cpp-python"
+version = "0.1.0a0"
+description = "Python ctypes bindings and wheel packaging for qwentts.cpp"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Andres Marafioti" }]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "huggingface-hub",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/andimarafioti/qwentts-cpp-python"
+Repository = "https://github.com/andimarafioti/qwentts-cpp-python"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+qwentts_cpp = ["py.typed", "lib/*"]
+
+[tool.cibuildwheel]
+build = "cp310-manylinux_*"
+skip = "*-musllinux_* *-manylinux_i686"
+before-build = "python scripts/build_native.py --backend cuda --clean"
+test-command = "python -c \"from qwentts_cpp import QwenLibrary; print(QwenLibrary().version())\""
+
+[tool.cibuildwheel.linux]
+repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"

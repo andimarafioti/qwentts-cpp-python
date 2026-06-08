@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+uv.lock
+
+build/
+dist/
+*.egg-info/
+src/qwentts_cpp/lib/*
+!src/qwentts_cpp/lib/.gitkeep
+
+third_party/
+wheelhouse/
+*.whl
