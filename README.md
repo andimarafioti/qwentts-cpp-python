@@ -16,7 +16,7 @@ python scripts/build_native.py \
   --source /path/to/qwentts.cpp \
   --backend cuda \
   --clean
-QWENTTS_CPP_WHEEL_BUILD_TAG=1cu130 python -m build --wheel
+QWENTTS_CPP_WHEEL_BUILD_TAG=1cu128 python -m build --wheel
 ```
 
 `--backend cuda` is the default because `faster-qwen3-tts` is a CUDA-first

@@ -20,11 +20,11 @@ name: qwentts-cpp-python wheels
       cuda_architectures:
         description: CMAKE_CUDA_ARCHITECTURES for portable CUDA binaries
         required: true
-        default: 75-virtual;80-virtual;86-real;89-real;120a-real;121a-real
+        default: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual
       wheel_build_tag:
         description: Optional wheel build tag
         required: true
-        default: 1cu130
+        default: 1cu128
 
 jobs:
   linux-cuda:
@@ -43,9 +43,9 @@ jobs:
     env:
       QWENTTS_CPP_BACKEND: cuda
       QWENTTS_CPP_BUILD_JOBS: "2"
-      QWENTTS_CPP_WHEEL_BUILD_TAG: ${{ inputs.wheel_build_tag || '1cu130' }}
+      QWENTTS_CPP_WHEEL_BUILD_TAG: ${{ inputs.wheel_build_tag || '1cu128' }}
       QWENTTS_REF: ${{ inputs.qwentts_ref || 'eda8b59092b8d7b7142177c599b08909b87f63b4' }}
-      CUDA_ARCHITECTURES: ${{ inputs.cuda_architectures || '75-virtual;80-virtual;86-real;89-real;120a-real;121a-real' }}
+      CUDA_ARCHITECTURES: ${{ inputs.cuda_architectures || '75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -70,12 +70,12 @@ jobs:
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cuda-nvcc-13-0 \
-            cuda-cudart-dev-13-0 \
-            libcublas-dev-13-0
-          echo "/usr/local/cuda-13.0/bin" >> "$GITHUB_PATH"
-          echo "CUDA_HOME=/usr/local/cuda-13.0" >> "$GITHUB_ENV"
-          echo "CMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc" >> "$GITHUB_ENV"
+            cuda-nvcc-12-8 \
+            cuda-cudart-dev-12-8 \
+            libcublas-dev-12-8
+          echo "/usr/local/cuda-12.8/bin" >> "$GITHUB_PATH"
+          echo "CUDA_HOME=/usr/local/cuda-12.8" >> "$GITHUB_ENV"
+          echo "CMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc" >> "$GITHUB_ENV"
 
       - name: Fetch qwentts.cpp
         run: |
