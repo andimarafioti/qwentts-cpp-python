@@ -17,18 +17,10 @@ name: qwentts-cpp-python wheels
         description: qwentts.cpp commit, tag, or branch to build
         required: true
         default: eda8b59092b8d7b7142177c599b08909b87f63b4
-      cuda_architectures:
-        description: CMAKE_CUDA_ARCHITECTURES for portable CUDA binaries
-        required: true
-        default: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual
-      wheel_build_tag:
-        description: Optional wheel build tag
-        required: true
-        default: 1cu128
 
 jobs:
   linux-cuda:
-    name: Linux ${{ matrix.arch }} CUDA wheel
+    name: Linux ${{ matrix.arch }} CUDA ${{ matrix.cuda_version }} wheel
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -37,15 +29,41 @@ jobs:
           - arch: x86_64
             runner: ubuntu-24.04
             cuda_repo_arch: x86_64
+            cuda_version: "12.8"
+            cuda_package_suffix: "12-8"
+            cuda_home: /usr/local/cuda-12.8
+            wheel_build_tag: 1cu128
+            cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual
           - arch: aarch64
             runner: ubuntu-24.04-arm
             cuda_repo_arch: sbsa
+            cuda_version: "12.8"
+            cuda_package_suffix: "12-8"
+            cuda_home: /usr/local/cuda-12.8
+            wheel_build_tag: 1cu128
+            cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual
+          - arch: x86_64
+            runner: ubuntu-24.04
+            cuda_repo_arch: x86_64
+            cuda_version: "13.0"
+            cuda_package_suffix: "13-0"
+            cuda_home: /usr/local/cuda-13.0
+            wheel_build_tag: 1cu130
+            cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual;121-real;121-virtual
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            cuda_repo_arch: sbsa
+            cuda_version: "13.0"
+            cuda_package_suffix: "13-0"
+            cuda_home: /usr/local/cuda-13.0
+            wheel_build_tag: 1cu130
+            cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual;121-real;121-virtual
     env:
       QWENTTS_CPP_BACKEND: cuda
       QWENTTS_CPP_BUILD_JOBS: "2"
-      QWENTTS_CPP_WHEEL_BUILD_TAG: ${{ inputs.wheel_build_tag || '1cu128' }}
+      QWENTTS_CPP_WHEEL_BUILD_TAG: ${{ matrix.wheel_build_tag }}
       QWENTTS_REF: ${{ inputs.qwentts_ref || 'eda8b59092b8d7b7142177c599b08909b87f63b4' }}
-      CUDA_ARCHITECTURES: ${{ inputs.cuda_architectures || '75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual' }}
+      CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
     steps:
       - uses: actions/checkout@v4
 
@@ -70,12 +88,12 @@ jobs:
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cuda-nvcc-12-8 \
-            cuda-cudart-dev-12-8 \
-            libcublas-dev-12-8
-          echo "/usr/local/cuda-12.8/bin" >> "$GITHUB_PATH"
-          echo "CUDA_HOME=/usr/local/cuda-12.8" >> "$GITHUB_ENV"
-          echo "CMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc" >> "$GITHUB_ENV"
+            cuda-nvcc-${{ matrix.cuda_package_suffix }} \
+            cuda-cudart-dev-${{ matrix.cuda_package_suffix }} \
+            libcublas-dev-${{ matrix.cuda_package_suffix }}
+          echo "${{ matrix.cuda_home }}/bin" >> "$GITHUB_PATH"
+          echo "CUDA_HOME=${{ matrix.cuda_home }}" >> "$GITHUB_ENV"
+          echo "CMAKE_CUDA_COMPILER=${{ matrix.cuda_home }}/bin/nvcc" >> "$GITHUB_ENV"
 
       - name: Fetch qwentts.cpp
         run: |
@@ -98,5 +116,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: qwentts-cpp-python-linux-${{ matrix.arch }}-cuda
+          name: qwentts-cpp-python-linux-${{ matrix.arch }}-cuda-${{ matrix.wheel_build_tag }}
           path: wheelhouse/*.whl

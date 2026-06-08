@@ -16,6 +16,7 @@ python scripts/build_native.py \
   --source /path/to/qwentts.cpp \
   --backend cuda \
   --clean
+# Use 1cu128 for CUDA 12.8 builds or 1cu130 for CUDA 13.0 builds.
 QWENTTS_CPP_WHEEL_BUILD_TAG=1cu128 python -m build --wheel
 ```
 
