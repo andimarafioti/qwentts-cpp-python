@@ -118,3 +118,55 @@ jobs:
         with:
           name: qwentts-cpp-python-linux-${{ matrix.arch }}-cuda-${{ matrix.wheel_build_tag }}
           path: wheelhouse/*.whl
+
+  linux-cpu:
+    name: Linux ${{ matrix.arch }} CPU wheel
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    env:
+      QWENTTS_CPP_BACKEND: cpu
+      QWENTTS_CPP_BUILD_JOBS: "2"
+      QWENTTS_CPP_WHEEL_BUILD_TAG: 1cpu
+      QWENTTS_REF: ${{ inputs.qwentts_ref || 'eda8b59092b8d7b7142177c599b08909b87f63b4' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip build wheel
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build patchelf ca-certificates
+
+      - name: Fetch qwentts.cpp
+        run: |
+          git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
+          git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
+          git -C third_party/qwentts.cpp submodule update --init --recursive
+
+      - name: Build wheel
+        run: |
+          python scripts/build_native.py \
+            --source third_party/qwentts.cpp \
+            --backend cpu \
+            --clean \
+            --cmake-arg=-G \
+            --cmake-arg=Ninja
+          python -m build --wheel
+          mkdir -p wheelhouse
+          cp dist/*.whl wheelhouse/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qwentts-cpp-python-linux-${{ matrix.arch }}-cpu
+          path: wheelhouse/*.whl
