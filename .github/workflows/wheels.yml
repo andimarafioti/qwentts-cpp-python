@@ -101,7 +101,7 @@ jobs:
           git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
           git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
           git -C third_party/qwentts.cpp submodule update --init --recursive
-          git -C third_party/qwentts.cpp apply "$GITHUB_WORKSPACE/patches/qwentts-cpu-host-prompt-projection.patch"
+          git -C third_party/qwentts.cpp apply "$GITHUB_WORKSPACE/patches/qwentts-reset-scheduler-before-talker-alloc.patch"
 
       - name: Build wheel
         run: |
@@ -155,7 +155,7 @@ jobs:
           git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
           git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
           git -C third_party/qwentts.cpp submodule update --init --recursive
-          git -C third_party/qwentts.cpp apply "$GITHUB_WORKSPACE/patches/qwentts-cpu-host-prompt-projection.patch"
+          git -C third_party/qwentts.cpp apply "$GITHUB_WORKSPACE/patches/qwentts-reset-scheduler-before-talker-alloc.patch"
 
       - name: Build wheel
         run: |

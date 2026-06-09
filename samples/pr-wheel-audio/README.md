@@ -3,7 +3,7 @@
 These samples were generated on the local GB10 machine, using cached GGUF
 files and no model downloads. All files were generated from native ref
 `eda8b59092b8d7b7142177c599b08909b87f63b4`; CPU samples use
-`patches/qwentts-cpu-host-prompt-projection.patch`.
+`patches/qwentts-reset-scheduler-before-talker-alloc.patch`.
 
 Common settings:
 
@@ -33,5 +33,8 @@ Validation:
 - All six final WAVs produced non-empty, prompt-matching transcripts.
 - Before this patch, the same current-ref CPU wheel transcribed as only
   `D` / `What uh` on this machine.
+- The broader all-options validation artifacts are linked from the PR comment
+  and include CPU reset-before local, CUDA 13 reset-before local, CUDA 12.8
+  wheel, and CUDA 13.0 wheel runs.
 
 See `manifest.json` for the measured generation metadata and STT transcripts.

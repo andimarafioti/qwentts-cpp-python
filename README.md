@@ -33,10 +33,11 @@ QWENTTS_CPP_WHEEL_BUILD_TAG=1cpu python -m build --wheel
 package. CPU builds are still useful for development and smoke tests, but they
 are not the primary release target.
 
-The CI wheel build applies `patches/qwentts-cpu-host-prompt-projection.patch`
-to the checked-out `qwentts.cpp` source. The patch keeps CUDA on the backend
-projection path and routes CPU prompt projection through host F32 math, which is
-required for the current upstream ref to produce valid CPU speech on aarch64.
+The CI wheel build applies
+`patches/qwentts-reset-scheduler-before-talker-alloc.patch` to the checked-out
+`qwentts.cpp` source. The patch resets the GGML scheduler before allocating the
+talker graph, which avoids stale scheduler state after prompt-projection graphs
+and keeps both CPU and CUDA on the backend prompt-projection path.
 
 `QWENTTS_CPP_WHEEL_BUILD_TAG` is useful for local wheelhouses. For public
 indexes, publish one backend flavor per package/version/platform compatibility
