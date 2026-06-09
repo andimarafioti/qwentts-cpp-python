@@ -3,8 +3,8 @@
   "codec_left_context_sec": 2.0,
   "lang": "english",
   "model": "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
-  "native_patch": "patches/qwentts-reset-scheduler-before-talker-alloc.patch",
-  "native_patch_note": "Resets the GGML scheduler before allocating the talker graph; CPU and CUDA both keep backend prompt projection.",
+  "native_patch_note": "Scheduler reset before talker graph allocation is merged upstream in qwentts.cpp f79b23a56702584d51e3a66509b881cd99a95bba; no package-side patch is applied.",
+  "native_ref": "f79b23a56702584d51e3a66509b881cd99a95bba",
   "quant": "BF16",
   "repetition_penalty": 1.05,
   "seed": 42,
@@ -17,8 +17,7 @@
     {
       "backend": "cpu",
       "load_s": 1.7071470492519438,
-      "native_patch": "patches/qwentts-reset-scheduler-before-talker-alloc.patch",
-      "native_ref": "eda8b59092b8d7b7142177c599b08909b87f63b4",
+      "native_ref": "f79b23a56702584d51e3a66509b881cd99a95bba",
       "results": [
         {
           "audio_s": 1.6,
@@ -72,7 +71,7 @@
     {
       "backend": "cu128",
       "load_s": 7.176388549618423,
-      "native_ref": "eda8b59092b8d7b7142177c599b08909b87f63b4",
+      "native_ref": "f79b23a56702584d51e3a66509b881cd99a95bba",
       "results": [
         {
           "audio_s": 1.6,
@@ -124,7 +123,7 @@
     {
       "backend": "cu130",
       "load_s": 7.110981802921742,
-      "native_ref": "eda8b59092b8d7b7142177c599b08909b87f63b4",
+      "native_ref": "f79b23a56702584d51e3a66509b881cd99a95bba",
       "results": [
         {
           "audio_s": 1.6,

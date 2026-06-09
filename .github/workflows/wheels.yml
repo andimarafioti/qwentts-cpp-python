@@ -6,7 +6,6 @@ name: qwentts-cpp-python wheels
       - main
     paths:
       - ".github/workflows/wheels.yml"
-      - "patches/**"
       - "pyproject.toml"
       - "setup.py"
       - "scripts/**"
@@ -17,7 +16,7 @@ name: qwentts-cpp-python wheels
       qwentts_ref:
         description: qwentts.cpp commit, tag, or branch to build
         required: true
-        default: eda8b59092b8d7b7142177c599b08909b87f63b4
+        default: f79b23a56702584d51e3a66509b881cd99a95bba
 
 jobs:
   linux-cuda:
@@ -63,7 +62,7 @@ jobs:
       QWENTTS_CPP_BACKEND: cuda
       QWENTTS_CPP_BUILD_JOBS: "2"
       QWENTTS_CPP_WHEEL_BUILD_TAG: ${{ matrix.wheel_build_tag }}
-      QWENTTS_REF: ${{ inputs.qwentts_ref || 'eda8b59092b8d7b7142177c599b08909b87f63b4' }}
+      QWENTTS_REF: ${{ inputs.qwentts_ref || 'f79b23a56702584d51e3a66509b881cd99a95bba' }}
       CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
     steps:
       - uses: actions/checkout@v4
@@ -101,7 +100,6 @@ jobs:
           git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
           git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
           git -C third_party/qwentts.cpp submodule update --init --recursive
-          git -C third_party/qwentts.cpp apply "$GITHUB_WORKSPACE/patches/qwentts-reset-scheduler-before-talker-alloc.patch"
 
       - name: Build wheel
         run: |
@@ -136,7 +134,7 @@ jobs:
       QWENTTS_CPP_BACKEND: cpu
       QWENTTS_CPP_BUILD_JOBS: "2"
       QWENTTS_CPP_WHEEL_BUILD_TAG: 1cpu
-      QWENTTS_REF: ${{ inputs.qwentts_ref || 'eda8b59092b8d7b7142177c599b08909b87f63b4' }}
+      QWENTTS_REF: ${{ inputs.qwentts_ref || 'f79b23a56702584d51e3a66509b881cd99a95bba' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -155,7 +153,6 @@ jobs:
           git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
           git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
           git -C third_party/qwentts.cpp submodule update --init --recursive
-          git -C third_party/qwentts.cpp apply "$GITHUB_WORKSPACE/patches/qwentts-reset-scheduler-before-talker-alloc.patch"
 
       - name: Build wheel
         run: |

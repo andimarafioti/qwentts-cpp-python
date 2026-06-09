@@ -2,8 +2,8 @@
 
 These samples were generated on the local GB10 machine, using cached GGUF
 files and no model downloads. All files were generated from native ref
-`eda8b59092b8d7b7142177c599b08909b87f63b4`; CPU samples use
-`patches/qwentts-reset-scheduler-before-talker-alloc.patch`.
+`eda8b59092b8d7b7142177c599b08909b87f63b4` plus the scheduler reset that is now
+merged upstream in qwentts.cpp `f79b23a56702584d51e3a66509b881cd99a95bba`.
 
 Common settings:
 
