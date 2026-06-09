@@ -6,6 +6,7 @@ name: qwentts-cpp-python wheels
       - main
     paths:
       - ".github/workflows/wheels.yml"
+      - "patches/**"
       - "pyproject.toml"
       - "setup.py"
       - "scripts/**"
@@ -100,6 +101,7 @@ jobs:
           git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
           git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
           git -C third_party/qwentts.cpp submodule update --init --recursive
+          git -C third_party/qwentts.cpp apply "$GITHUB_WORKSPACE/patches/qwentts-cpu-host-prompt-projection.patch"
 
       - name: Build wheel
         run: |
@@ -134,7 +136,7 @@ jobs:
       QWENTTS_CPP_BACKEND: cpu
       QWENTTS_CPP_BUILD_JOBS: "2"
       QWENTTS_CPP_WHEEL_BUILD_TAG: 1cpu
-      QWENTTS_REF: ${{ inputs.qwentts_ref || 'a62fde62e64bf81a49af6e6c07ac5817df93f19e' }}
+      QWENTTS_REF: ${{ inputs.qwentts_ref || 'eda8b59092b8d7b7142177c599b08909b87f63b4' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -153,6 +155,7 @@ jobs:
           git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
           git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
           git -C third_party/qwentts.cpp submodule update --init --recursive
+          git -C third_party/qwentts.cpp apply "$GITHUB_WORKSPACE/patches/qwentts-cpu-host-prompt-projection.patch"
 
       - name: Build wheel
         run: |

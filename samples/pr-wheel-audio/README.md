@@ -1,10 +1,9 @@
 # PR wheel audio samples
 
 These samples were generated on the local GB10 machine, using cached GGUF
-files and no model downloads. The CPU files were regenerated from a local CPU
-wheel built at native ref `a62fde62e64bf81a49af6e6c07ac5817df93f19e`; the
-newer `eda8b59092b8d7b7142177c599b08909b87f63b4` CPU output failed STT on
-aarch64. CUDA samples use the newer ref.
+files and no model downloads. All files were generated from native ref
+`eda8b59092b8d7b7142177c599b08909b87f63b4`; CPU samples use
+`patches/qwentts-cpu-host-prompt-projection.patch`.
 
 Common settings:
 
@@ -32,5 +31,7 @@ Validation:
 
 - STT validator: `nano-parakeet` with `nvidia/parakeet-tdt-0.6b-v3`.
 - All six final WAVs produced non-empty, prompt-matching transcripts.
+- Before this patch, the same current-ref CPU wheel transcribed as only
+  `D` / `What uh` on this machine.
 
 See `manifest.json` for the measured generation metadata and STT transcripts.

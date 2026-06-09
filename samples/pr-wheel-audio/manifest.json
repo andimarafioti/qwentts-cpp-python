@@ -14,56 +14,56 @@
   "wheels": [
     {
       "backend": "cpu",
-      "load_s": 2.0223141252063215,
-      "native_ref": "a62fde62e64bf81a49af6e6c07ac5817df93f19e",
-      "native_ref_note": "Pinned for CPU wheels because eda8b59092b8d7b7142177c599b08909b87f63b4 CPU output failed STT on aarch64.",
+      "load_s": 2.131244066171348,
+      "native_ref": "eda8b59092b8d7b7142177c599b08909b87f63b4",
       "results": [
         {
           "audio_s": 1.6,
           "backend": "cpu",
-          "bytes": 76844,
           "chunks": 3,
           "do_sample": false,
           "file": "cpu_greedy_20f_customvoice_bf16.wav",
-          "first_callback_enter_ms": 2871.5924327261746,
-          "first_yield_s": 2.889105724170804,
-          "max": 0.5389419198036194,
+          "first_callback_enter_ms": 2928.3075369894505,
+          "first_yield_s": 2.9399944790638983,
+          "max": 0.5881905555725098,
           "max_new_tokens": 20,
-          "min": -0.8799189925193787,
+          "min": -0.7856731414794922,
           "mode": "greedy_20f",
-          "native_synthesize_ms": 5903.745974879712,
-          "rms": 0.12638525475162257,
+          "native_synthesize_ms": 5951.263410970569,
+          "rms": 0.14504192498406004,
           "sample_rate": 24000,
           "samples": 38400,
-          "stt_error": null,
-          "stt_text": "This is a short deterministic.",
           "text": "This is a short deterministic backend comparison.",
-          "total_s": 5.904326089192182
+          "total_s": 5.951871623285115,
+          "bytes": 76844,
+          "stt_error": null,
+          "stt_text": "This is a short determination."
         },
         {
           "audio_s": 6.4,
           "backend": "cpu",
-          "bytes": 307244,
           "chunks": 10,
           "do_sample": true,
           "file": "cpu_sampled_seed42_customvoice_bf16.wav",
-          "first_callback_enter_ms": 4152.881260961294,
-          "first_yield_s": 4.153038045857102,
-          "max": 0.7254488468170166,
+          "first_callback_enter_ms": 4235.097383148968,
+          "first_yield_s": 4.23526394367218,
+          "max": 0.6939599514007568,
           "max_new_tokens": 80,
-          "min": -0.8652018904685974,
+          "min": -0.6708506345748901,
           "mode": "sampled_seed42",
-          "native_synthesize_ms": 23030.18798213452,
-          "rms": 0.13529331953211635,
+          "native_synthesize_ms": 24716.793733183295,
+          "rms": 0.1335170614415004,
           "sample_rate": 24000,
           "samples": 153600,
-          "stt_error": null,
-          "stt_text": "Hello from the Quentz CPP Python wheel. This sample compares the same Quen 3 custom",
           "text": "Hello from the qwentts cpp Python wheel. This sample compares the same Qwen three custom voice settings across backends.",
-          "total_s": 23.030527487862855
+          "total_s": 24.71709709474817,
+          "bytes": 307244,
+          "stt_error": null,
+          "stt_text": "Hello from the Quince TPP Python wheel. This sample compares the same Quen 3 custom voice set."
         }
       ],
-      "version": "a62fde6 (2026-05-30)"
+      "version": "eda8b59 (2026-05-31)",
+      "native_patch": "patches/qwentts-cpu-host-prompt-projection.patch"
     },
     {
       "backend": "cu128",
@@ -73,7 +73,6 @@
         {
           "audio_s": 1.6,
           "backend": "cu128",
-          "bytes": 76844,
           "chunks": 3,
           "do_sample": false,
           "file": "cu128_greedy_20f_customvoice_bf16.wav",
@@ -87,15 +86,15 @@
           "rms": 0.13154427288141302,
           "sample_rate": 24000,
           "samples": 38400,
-          "stt_error": null,
-          "stt_text": "This is a short deterministic.",
           "text": "This is a short deterministic backend comparison.",
-          "total_s": 1.1447814558632672
+          "total_s": 1.1447814558632672,
+          "bytes": 76844,
+          "stt_error": null,
+          "stt_text": "This is a short deterministic."
         },
         {
           "audio_s": 6.4,
           "backend": "cu128",
-          "bytes": 307244,
           "chunks": 10,
           "do_sample": true,
           "file": "cu128_sampled_seed42_customvoice_bf16.wav",
@@ -109,10 +108,11 @@
           "rms": 0.12360686647515703,
           "sample_rate": 24000,
           "samples": 153600,
-          "stt_error": null,
-          "stt_text": "Hello from the Quent's TP by Python wheel. This sample compares the same Quen 3 custom voice setting.",
           "text": "Hello from the qwentts cpp Python wheel. This sample compares the same Qwen three custom voice settings across backends.",
-          "total_s": 2.7314665098674595
+          "total_s": 2.7314665098674595,
+          "bytes": 307244,
+          "stt_error": null,
+          "stt_text": "Hello from the Quent's TP by Python wheel. This sample compares the same Quen 3 custom voice setting."
         }
       ],
       "version": "eda8b59 (2026-05-31)"
@@ -125,7 +125,6 @@
         {
           "audio_s": 1.6,
           "backend": "cu130",
-          "bytes": 76844,
           "chunks": 3,
           "do_sample": false,
           "file": "cu130_greedy_20f_customvoice_bf16.wav",
@@ -139,15 +138,15 @@
           "rms": 0.15053639747356867,
           "sample_rate": 24000,
           "samples": 38400,
-          "stt_error": null,
-          "stt_text": "This is a short determination.",
           "text": "This is a short deterministic backend comparison.",
-          "total_s": 1.0909001021645963
+          "total_s": 1.0909001021645963,
+          "bytes": 76844,
+          "stt_error": null,
+          "stt_text": "This is a short determination."
         },
         {
           "audio_s": 6.4,
           "backend": "cu130",
-          "bytes": 307244,
           "chunks": 10,
           "do_sample": true,
           "file": "cu130_sampled_seed42_customvoice_bf16.wav",
@@ -161,13 +160,16 @@
           "rms": 0.12078344219599677,
           "sample_rate": 24000,
           "samples": 153600,
-          "stt_error": null,
-          "stt_text": "Hello from the Quint GPP Python wheel. This sample compares the same Quen 3 custom voice settings.",
           "text": "Hello from the qwentts cpp Python wheel. This sample compares the same Qwen three custom voice settings across backends.",
-          "total_s": 2.734125139657408
+          "total_s": 2.734125139657408,
+          "bytes": 307244,
+          "stt_error": null,
+          "stt_text": "Hello from the Quint GPP Python wheel. This sample compares the same Quen 3 custom voice settings."
         }
       ],
       "version": "eda8b59 (2026-05-31)"
     }
-  ]
+  ],
+  "native_patch": "patches/qwentts-cpu-host-prompt-projection.patch",
+  "native_patch_note": "CPU prompt text projection and ICL codec stream embeddings use host F32 math; CUDA keeps the backend path."
 }
