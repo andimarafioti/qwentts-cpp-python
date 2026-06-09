@@ -1,24 +1,26 @@
 name: qwentts-cpp-python wheels
 
 "on":
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/wheels.yml"
+      - "pyproject.toml"
+      - "setup.py"
+      - "scripts/**"
+      - "src/**"
+      - "tests/**"
   workflow_dispatch:
     inputs:
       qwentts_ref:
         description: qwentts.cpp commit, tag, or branch to build
         required: true
-        default: eda8b59092b8d7b7142177c599b08909b87f63b4
-      cuda_architectures:
-        description: CMAKE_CUDA_ARCHITECTURES for portable CUDA binaries
-        required: true
-        default: 75-virtual;80-virtual;86-real;89-real;120a-real;121a-real
-      wheel_build_tag:
-        description: Optional wheel build tag
-        required: true
-        default: 1cu130
+        default: f79b23a56702584d51e3a66509b881cd99a95bba
 
 jobs:
   linux-cuda:
-    name: Linux ${{ matrix.arch }} CUDA wheel
+    name: Linux ${{ matrix.arch }} CUDA ${{ matrix.cuda_version }} wheel
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -27,13 +29,41 @@ jobs:
           - arch: x86_64
             runner: ubuntu-24.04
             cuda_repo_arch: x86_64
+            cuda_version: "12.8"
+            cuda_package_suffix: "12-8"
+            cuda_home: /usr/local/cuda-12.8
+            wheel_build_tag: 1cu128
+            cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual
           - arch: aarch64
             runner: ubuntu-24.04-arm
             cuda_repo_arch: sbsa
+            cuda_version: "12.8"
+            cuda_package_suffix: "12-8"
+            cuda_home: /usr/local/cuda-12.8
+            wheel_build_tag: 1cu128
+            cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual
+          - arch: x86_64
+            runner: ubuntu-24.04
+            cuda_repo_arch: x86_64
+            cuda_version: "13.0"
+            cuda_package_suffix: "13-0"
+            cuda_home: /usr/local/cuda-13.0
+            wheel_build_tag: 1cu130
+            cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual;121-real;121-virtual
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            cuda_repo_arch: sbsa
+            cuda_version: "13.0"
+            cuda_package_suffix: "13-0"
+            cuda_home: /usr/local/cuda-13.0
+            wheel_build_tag: 1cu130
+            cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual;121-real;121-virtual
     env:
       QWENTTS_CPP_BACKEND: cuda
       QWENTTS_CPP_BUILD_JOBS: "2"
-      QWENTTS_CPP_WHEEL_BUILD_TAG: ${{ inputs.wheel_build_tag }}
+      QWENTTS_CPP_WHEEL_BUILD_TAG: ${{ matrix.wheel_build_tag }}
+      QWENTTS_REF: ${{ inputs.qwentts_ref || 'f79b23a56702584d51e3a66509b881cd99a95bba' }}
+      CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
     steps:
       - uses: actions/checkout@v4
 
@@ -58,17 +88,17 @@ jobs:
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cuda-nvcc-13-0 \
-            cuda-cudart-dev-13-0 \
-            libcublas-dev-13-0
-          echo "/usr/local/cuda-13.0/bin" >> "$GITHUB_PATH"
-          echo "CUDA_HOME=/usr/local/cuda-13.0" >> "$GITHUB_ENV"
-          echo "CMAKE_CUDA_COMPILER=/usr/local/cuda-13.0/bin/nvcc" >> "$GITHUB_ENV"
+            cuda-nvcc-${{ matrix.cuda_package_suffix }} \
+            cuda-cudart-dev-${{ matrix.cuda_package_suffix }} \
+            libcublas-dev-${{ matrix.cuda_package_suffix }}
+          echo "${{ matrix.cuda_home }}/bin" >> "$GITHUB_PATH"
+          echo "CUDA_HOME=${{ matrix.cuda_home }}" >> "$GITHUB_ENV"
+          echo "CMAKE_CUDA_COMPILER=${{ matrix.cuda_home }}/bin/nvcc" >> "$GITHUB_ENV"
 
       - name: Fetch qwentts.cpp
         run: |
           git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
-          git -C third_party/qwentts.cpp checkout "${{ inputs.qwentts_ref }}"
+          git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
           git -C third_party/qwentts.cpp submodule update --init --recursive
 
       - name: Build wheel
@@ -79,12 +109,64 @@ jobs:
             --clean \
             --cmake-arg=-G \
             --cmake-arg=Ninja \
-            --cmake-arg="-DCMAKE_CUDA_ARCHITECTURES=${{ inputs.cuda_architectures }}"
+            --cmake-arg="-DCMAKE_CUDA_ARCHITECTURES=$CUDA_ARCHITECTURES"
           python -m build --wheel
           mkdir -p wheelhouse
           cp dist/*.whl wheelhouse/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: qwentts-cpp-python-linux-${{ matrix.arch }}-cuda
+          name: qwentts-cpp-python-linux-${{ matrix.arch }}-cuda-${{ matrix.wheel_build_tag }}
+          path: wheelhouse/*.whl
+
+  linux-cpu:
+    name: Linux ${{ matrix.arch }} CPU wheel
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    env:
+      QWENTTS_CPP_BACKEND: cpu
+      QWENTTS_CPP_BUILD_JOBS: "2"
+      QWENTTS_CPP_WHEEL_BUILD_TAG: 1cpu
+      QWENTTS_REF: ${{ inputs.qwentts_ref || 'f79b23a56702584d51e3a66509b881cd99a95bba' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip build wheel
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build patchelf ca-certificates
+
+      - name: Fetch qwentts.cpp
+        run: |
+          git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
+          git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
+          git -C third_party/qwentts.cpp submodule update --init --recursive
+
+      - name: Build wheel
+        run: |
+          python scripts/build_native.py \
+            --source third_party/qwentts.cpp \
+            --backend cpu \
+            --clean \
+            --cmake-arg=-G \
+            --cmake-arg=Ninja
+          python -m build --wheel
+          mkdir -p wheelhouse
+          cp dist/*.whl wheelhouse/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qwentts-cpp-python-linux-${{ matrix.arch }}-cpu
           path: wheelhouse/*.whl

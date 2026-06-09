@@ -16,12 +16,27 @@ python scripts/build_native.py \
   --source /path/to/qwentts.cpp \
   --backend cuda \
   --clean
-QWENTTS_CPP_WHEEL_BUILD_TAG=1cu130 python -m build --wheel
+QWENTTS_CPP_WHEEL_BUILD_TAG=1cu128 python -m build --wheel
+```
+
+CPU development build:
+
+```bash
+python scripts/build_native.py \
+  --source /path/to/qwentts.cpp \
+  --backend cpu \
+  --clean
+QWENTTS_CPP_WHEEL_BUILD_TAG=1cpu python -m build --wheel
 ```
 
 `--backend cuda` is the default because `faster-qwen3-tts` is a CUDA-first
 package. CPU builds are still useful for development and smoke tests, but they
 are not the primary release target.
+
+The CI wheel build defaults to qwentts.cpp
+`f79b23a56702584d51e3a66509b881cd99a95bba`, which includes the scheduler reset
+before talker graph allocation. CPU and CUDA both stay on the backend
+prompt-projection path.
 
 `QWENTTS_CPP_WHEEL_BUILD_TAG` is useful for local wheelhouses. For public
 indexes, publish one backend flavor per package/version/platform compatibility
