@@ -134,7 +134,7 @@ jobs:
       QWENTTS_CPP_BACKEND: cpu
       QWENTTS_CPP_BUILD_JOBS: "2"
       QWENTTS_CPP_WHEEL_BUILD_TAG: 1cpu
-      QWENTTS_REF: ${{ inputs.qwentts_ref || 'eda8b59092b8d7b7142177c599b08909b87f63b4' }}
+      QWENTTS_REF: ${{ inputs.qwentts_ref || 'a62fde62e64bf81a49af6e6c07ac5817df93f19e' }}
     steps:
       - uses: actions/checkout@v4
 
