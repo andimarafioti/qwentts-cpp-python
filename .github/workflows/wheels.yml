@@ -16,7 +16,7 @@ name: qwentts-cpp-python wheels
       qwentts_ref:
         description: qwentts.cpp commit, tag, or branch to build
         required: true
-        default: f79b23a56702584d51e3a66509b881cd99a95bba
+        default: 4536dcdce27c3764a93a06d6bf64026b124962f5
 
 jobs:
   linux-cuda:
@@ -62,7 +62,7 @@ jobs:
       QWENTTS_CPP_BACKEND: cuda
       QWENTTS_CPP_BUILD_JOBS: "2"
       QWENTTS_CPP_WHEEL_BUILD_TAG: ${{ matrix.wheel_build_tag }}
-      QWENTTS_REF: ${{ inputs.qwentts_ref || 'f79b23a56702584d51e3a66509b881cd99a95bba' }}
+      QWENTTS_REF: ${{ inputs.qwentts_ref || '4536dcdce27c3764a93a06d6bf64026b124962f5' }}
       CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
     steps:
       - uses: actions/checkout@v4
@@ -134,7 +134,7 @@ jobs:
       QWENTTS_CPP_BACKEND: cpu
       QWENTTS_CPP_BUILD_JOBS: "2"
       QWENTTS_CPP_WHEEL_BUILD_TAG: 1cpu
-      QWENTTS_REF: ${{ inputs.qwentts_ref || 'f79b23a56702584d51e3a66509b881cd99a95bba' }}
+      QWENTTS_REF: ${{ inputs.qwentts_ref || '4536dcdce27c3764a93a06d6bf64026b124962f5' }}
     steps:
       - uses: actions/checkout@v4
 

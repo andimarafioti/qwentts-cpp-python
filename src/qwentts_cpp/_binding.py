@@ -12,6 +12,9 @@ from typing import Any, Iterator, Sequence, Tuple
 
 import numpy as np
 
+QT_ABI_VERSION = 2
+RVQ_CODE_BITS = 11
+
 
 class QwenStatus(IntEnum):
     OK = 0
@@ -87,7 +90,63 @@ class QtTTSParams(ctypes.Structure):
         ("on_chunk_user_data", ctypes.c_void_p),
         ("codec_chunk_sec", ctypes.c_float),
         ("codec_left_context_sec", ctypes.c_float),
+        ("ref_spk_emb", ctypes.POINTER(ctypes.c_float)),
+        ("ref_spk_dim", ctypes.c_int),
+        ("ref_codes", ctypes.POINTER(ctypes.c_int32)),
+        ("ref_T", ctypes.c_int),
     ]
+
+
+def load_speaker_embedding(path: str | os.PathLike[str]) -> np.ndarray:
+    """Load a qwentts.cpp `.spk` file as a contiguous float32 vector."""
+    data = np.fromfile(path, dtype=np.float32)
+    if data.size == 0:
+        raise ValueError(f"Speaker embedding file is empty: {path}")
+    return np.ascontiguousarray(data, dtype=np.float32)
+
+
+def load_rvq_codes(
+    path: str | os.PathLike[str],
+    num_codebooks: int,
+    *,
+    code_bits: int = RVQ_CODE_BITS,
+) -> np.ndarray:
+    """Load a packed qwentts.cpp `.rvq` file as `[num_codebooks, T]` int32 codes."""
+    if num_codebooks <= 0:
+        raise ValueError(f"num_codebooks must be positive, got {num_codebooks}")
+    if code_bits <= 0 or code_bits >= 32:
+        raise ValueError(f"code_bits must be in [1, 31], got {code_bits}")
+
+    packed = np.fromfile(path, dtype=np.uint8)
+    if packed.size == 0:
+        raise ValueError(f"RVQ file is empty: {path}")
+
+    n_codes = (int(packed.size) * 8) // int(code_bits)
+    if n_codes == 0 or n_codes % int(num_codebooks) != 0:
+        raise ValueError(
+            f"RVQ file {path} yields {n_codes} codes, not a positive multiple "
+            f"of num_codebooks={num_codebooks}"
+        )
+    codes = _unpack_rvq_codes(packed, n_codes, int(code_bits))
+    return codes.reshape(int(num_codebooks), n_codes // int(num_codebooks))
+
+
+def _unpack_rvq_codes(packed: np.ndarray, n_codes: int, code_bits: int) -> np.ndarray:
+    mask = (1 << code_bits) - 1
+    out = np.empty(n_codes, dtype=np.int32)
+    acc = 0
+    bits_in_acc = 0
+    in_pos = 0
+    data = packed.tolist()
+    for i in range(n_codes):
+        while bits_in_acc < code_bits and in_pos < len(data):
+            acc |= int(data[in_pos]) << bits_in_acc
+            bits_in_acc += 8
+            in_pos += 1
+        out[i] = acc & mask
+        acc >>= code_bits
+        bits_in_acc -= code_bits
+    return out
 
 
 def _as_utf8(value: str | os.PathLike[str] | None, keepalive: list[object]) -> bytes | None:
@@ -162,6 +221,9 @@ class QwenLibrary:
         self._dll_dir_handle = None
         self._dependency_handles: list[ctypes.CDLL] = []
         self._log_callback: QT_LOG_CB | None = None
+        self._has_qt_num_codebooks = False
+        self._has_qt_n_speakers = False
+        self._has_qt_speaker_name = False
         self._lib = self._load_cdll(self.path)
         self._bind()
 
@@ -209,6 +271,24 @@ class QwenLibrary:
         lib.qt_log_set.restype = None
         lib.qt_duration_sec_to_tokens.argtypes = [ctypes.c_void_p, ctypes.c_float]
         lib.qt_duration_sec_to_tokens.restype = ctypes.c_int
+        try:
+            lib.qt_num_codebooks.argtypes = [ctypes.c_void_p]
+            lib.qt_num_codebooks.restype = ctypes.c_int
+            self._has_qt_num_codebooks = True
+        except AttributeError:
+            self._has_qt_num_codebooks = False
+        try:
+            lib.qt_n_speakers.argtypes = [ctypes.c_void_p]
+            lib.qt_n_speakers.restype = ctypes.c_int
+            self._has_qt_n_speakers = True
+        except AttributeError:
+            self._has_qt_n_speakers = False
+        try:
+            lib.qt_speaker_name.argtypes = [ctypes.c_void_p, ctypes.c_int]
+            lib.qt_speaker_name.restype = ctypes.c_char_p
+            self._has_qt_speaker_name = True
+        except AttributeError:
+            self._has_qt_speaker_name = False
 
     def version(self) -> str:
         return self._lib.qt_version().decode("utf-8", errors="replace")
@@ -328,6 +408,28 @@ class QwenTTS:
     def duration_sec_to_tokens(self, seconds: float) -> int:
         return int(self.library._lib.qt_duration_sec_to_tokens(self._require_ctx(), float(seconds)))
 
+    def num_codebooks(self) -> int:
+        if not self.library._has_qt_num_codebooks:
+            raise QwenTTSError("qt_num_codebooks is unavailable; cached RVQ references require qwentts.cpp ABI v2")
+        value = int(self.library._lib.qt_num_codebooks(self._require_ctx()))
+        if value <= 0:
+            raise QwenTTSError(self.library.last_error() or "qt_num_codebooks returned 0")
+        return value
+
+    def speaker_names(self) -> list[str]:
+        if not (self.library._has_qt_n_speakers and self.library._has_qt_speaker_name):
+            raise QwenTTSError("Speaker enumeration requires qwentts.cpp ABI v2")
+        count = int(self.library._lib.qt_n_speakers(self._require_ctx()))
+        names: list[str] = []
+        for i in range(count):
+            value = self.library._lib.qt_speaker_name(self._require_ctx(), i)
+            if value:
+                names.append(value.decode("utf-8", errors="replace"))
+        return names
+
+    def load_rvq_codes(self, path: str | os.PathLike[str], *, code_bits: int = RVQ_CODE_BITS) -> np.ndarray:
+        return load_rvq_codes(path, self.num_codebooks(), code_bits=code_bits)
+
     def set_log_callback(self, callback) -> None:
         self.library.set_log_callback(callback)
 
@@ -339,6 +441,8 @@ class QwenTTS:
         instruct: str | None = None,
         speaker: str | None = None,
         ref_audio_24k: np.ndarray | None = None,
+        ref_spk_emb: np.ndarray | None = None,
+        ref_codes: np.ndarray | None = None,
         ref_text: str | None = None,
         seed: int = -1,
         max_new_tokens: int = 2048,
@@ -364,6 +468,8 @@ class QwenTTS:
             instruct=instruct,
             speaker=speaker,
             ref_audio_24k=ref_audio_24k,
+            ref_spk_emb=ref_spk_emb,
+            ref_codes=ref_codes,
             ref_text=ref_text,
             seed=seed,
             max_new_tokens=max_new_tokens,
@@ -424,6 +530,8 @@ class QwenTTS:
         instruct: str | None = None,
         speaker: str | None = None,
         ref_audio_24k: np.ndarray | None = None,
+        ref_spk_emb: np.ndarray | None = None,
+        ref_codes: np.ndarray | None = None,
         ref_text: str | None = None,
         seed: int = -1,
         max_new_tokens: int = 2048,
@@ -500,6 +608,8 @@ class QwenTTS:
                     instruct=instruct,
                     speaker=speaker,
                     ref_audio_24k=ref_audio_24k,
+                    ref_spk_emb=ref_spk_emb,
+                    ref_codes=ref_codes,
                     ref_text=ref_text,
                     seed=seed,
                     max_new_tokens=max_new_tokens,
@@ -577,6 +687,8 @@ class QwenTTS:
         instruct: str | None,
         speaker: str | None,
         ref_audio_24k: np.ndarray | None,
+        ref_spk_emb: np.ndarray | None,
+        ref_codes: np.ndarray | None,
         ref_text: str | None,
         seed: int,
         max_new_tokens: int,
@@ -597,6 +709,15 @@ class QwenTTS:
         params = QtTTSParams()
         self.library._lib.qt_tts_default_params(ctypes.byref(params))
 
+        if (ref_spk_emb is not None or ref_codes is not None) and params.abi_version < QT_ABI_VERSION:
+            raise QwenTTSError("Cached speaker/RVQ references require qwentts.cpp ABI v2")
+        if ref_audio_24k is not None and (ref_spk_emb is not None or ref_codes is not None):
+            raise ValueError("ref_audio_24k is mutually exclusive with ref_spk_emb/ref_codes")
+        if ref_codes is not None and ref_spk_emb is None:
+            raise ValueError("ref_codes requires ref_spk_emb")
+        if ref_codes is not None and not ref_text:
+            raise ValueError("ref_codes requires ref_text")
+
         params.text = _as_utf8(text, keepalive)  # type: ignore[arg-type]
         params.lang = _as_utf8(lang, keepalive)  # type: ignore[arg-type]
         params.instruct = _as_utf8(instruct, keepalive)  # type: ignore[arg-type]
@@ -609,6 +730,20 @@ class QwenTTS:
             keepalive.append(audio)
             params.ref_audio_24k = audio.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
             params.ref_n_samples = int(audio.shape[0])
+
+        if ref_spk_emb is not None:
+            spk = np.ascontiguousarray(ref_spk_emb, dtype=np.float32).reshape(-1)
+            if spk.size == 0:
+                raise ValueError("ref_spk_emb must not be empty")
+            keepalive.append(spk)
+            params.ref_spk_emb = spk.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
+            params.ref_spk_dim = int(spk.shape[0])
+
+        if ref_codes is not None:
+            codes, ref_T = self._prepare_ref_codes(ref_codes)
+            keepalive.append(codes)
+            params.ref_codes = codes.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
+            params.ref_T = int(ref_T)
 
         params.seed = int(seed)
         params.max_new_tokens = int(max_new_tokens)
@@ -624,3 +759,23 @@ class QwenTTS:
         params.codec_chunk_sec = float(codec_chunk_sec)
         params.codec_left_context_sec = float(codec_left_context_sec)
         return params, keepalive
+
+    def _prepare_ref_codes(self, ref_codes: np.ndarray) -> tuple[np.ndarray, int]:
+        codes = np.asarray(ref_codes, dtype=np.int32)
+        if codes.ndim == 2:
+            if codes.shape[0] <= 0 or codes.shape[1] <= 0:
+                raise ValueError("ref_codes must have shape [num_codebooks, T] with positive dimensions")
+            expected = self.num_codebooks() if self.library._has_qt_num_codebooks else codes.shape[0]
+            if codes.shape[0] != expected:
+                raise ValueError(f"ref_codes has {codes.shape[0]} codebooks, expected {expected}")
+            return np.ascontiguousarray(codes.reshape(-1), dtype=np.int32), int(codes.shape[1])
+        if codes.ndim == 1:
+            if codes.size == 0:
+                raise ValueError("ref_codes must not be empty")
+            num_codebooks = self.num_codebooks()
+            if codes.size % num_codebooks != 0:
+                raise ValueError(
+                    f"flat ref_codes length {codes.size} is not divisible by num_codebooks={num_codebooks}"
+                )
+            return np.ascontiguousarray(codes, dtype=np.int32), int(codes.size // num_codebooks)
+        raise ValueError("ref_codes must be a flat array or a [num_codebooks, T] matrix")
