@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qwentts-cpp-python"
-version = "0.1.0a0"
+version = "0.1.0a1"
 description = "Python ctypes bindings and wheel packaging for qwentts.cpp"
 readme = "README.md"
 license = "MIT"

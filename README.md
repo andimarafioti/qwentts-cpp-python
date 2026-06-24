@@ -34,9 +34,9 @@ package. CPU builds are still useful for development and smoke tests, but they
 are not the primary release target.
 
 The CI wheel build defaults to qwentts.cpp
-`f79b23a56702584d51e3a66509b881cd99a95bba`, which includes the scheduler reset
-before talker graph allocation. CPU and CUDA both stay on the backend
-prompt-projection path.
+`4536dcdce27c3764a93a06d6bf64026b124962f5`, which includes the scheduler
+resets and ABI v2 cached voice-reference fields. CPU and CUDA both stay on the
+backend prompt-projection path.
 
 `QWENTTS_CPP_WHEEL_BUILD_TAG` is useful for local wheelhouses. For public
 indexes, publish one backend flavor per package/version/platform compatibility
@@ -54,3 +54,41 @@ PY
 
 Model files are resolved with `huggingface-hub` by `QwenTTS.from_pretrained(...)`
 or passed directly to `QwenTTS(...)` as GGUF paths.
+
+## Cached voice references
+
+qwentts.cpp ABI v2 can skip reference WAV encoding for Base voice cloning by
+passing precomputed latents:
+
+- `.spk`: raw float32 speaker embedding from `qwen-codec --talker`
+- `.rvq`: packed 11-bit reference codec stream from `qwen-codec`
+
+```python
+from qwentts_cpp import QwenTTS, load_speaker_embedding
+
+tts = QwenTTS.from_pretrained("Qwen/Qwen3-TTS-12Hz-1.7B-Base", quant="Q4_K_M")
+
+spk = load_speaker_embedding("reference.spk")
+audio, sr = tts.synthesize(
+    text="The sky is blue today.",
+    lang="english",
+    ref_spk_emb=spk,
+    max_new_tokens=128,
+)
+```
+
+For ICL clone mode, load the RVQ matrix with the model's codebook count and
+also pass the reference transcript:
+
+```python
+from qwentts_cpp import load_rvq_codes
+
+rvq = load_rvq_codes("reference.rvq", tts.num_codebooks())
+audio, sr = tts.synthesize(
+    text="The sky is blue today.",
+    lang="english",
+    ref_spk_emb=spk,
+    ref_codes=rvq,
+    ref_text="Transcript of the reference audio.",
+)
+```
