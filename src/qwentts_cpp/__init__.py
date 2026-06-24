@@ -11,7 +11,7 @@ from ._binding import (
 )
 from .models import GGUF_REPO, resolve_gguf_paths
 
-__version__ = "0.1.0a1"
+__version__ = "0.2.0"
 
 __all__ = [
     "GGUF_REPO",
