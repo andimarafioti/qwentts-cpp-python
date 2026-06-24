@@ -27,13 +27,14 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            runner: ubuntu-24.04
+            runner: hf-jobs-cpu-performance
             cuda_repo_arch: x86_64
             cuda_version: "12.8"
             cuda_package_suffix: "12-8"
             cuda_home: /usr/local/cuda-12.8
             wheel_build_tag: 1cu128
             cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual
+            build_jobs: "16"
           - arch: aarch64
             runner: ubuntu-24.04-arm
             cuda_repo_arch: sbsa
@@ -42,14 +43,16 @@ jobs:
             cuda_home: /usr/local/cuda-12.8
             wheel_build_tag: 1cu128
             cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual
+            build_jobs: "2"
           - arch: x86_64
-            runner: ubuntu-24.04
+            runner: hf-jobs-cpu-performance
             cuda_repo_arch: x86_64
             cuda_version: "13.0"
             cuda_package_suffix: "13-0"
             cuda_home: /usr/local/cuda-13.0
             wheel_build_tag: 1cu130
             cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual;121-real;121-virtual
+            build_jobs: "16"
           - arch: aarch64
             runner: ubuntu-24.04-arm
             cuda_repo_arch: sbsa
@@ -58,9 +61,10 @@ jobs:
             cuda_home: /usr/local/cuda-13.0
             wheel_build_tag: 1cu130
             cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual;121-real;121-virtual
+            build_jobs: "2"
     env:
       QWENTTS_CPP_BACKEND: cuda
-      QWENTTS_CPP_BUILD_JOBS: "2"
+      QWENTTS_CPP_BUILD_JOBS: ${{ matrix.build_jobs }}
       QWENTTS_CPP_WHEEL_BUILD_TAG: ${{ matrix.wheel_build_tag }}
       QWENTTS_REF: ${{ inputs.qwentts_ref || '4536dcdce27c3764a93a06d6bf64026b124962f5' }}
       CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
