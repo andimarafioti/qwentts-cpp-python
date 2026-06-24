@@ -27,9 +27,6 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            # CUDA wheel builds compile many device-code variants and can exceed
-            # GitHub-hosted runner time budgets. This label is served by
-            # huggingface/jobs-actions when the dispatcher Space is installed.
             runner: hf-jobs-cpu-performance
             cuda_repo_arch: x86_64
             cuda_version: "12.8"
