@@ -34,7 +34,7 @@ package. CPU builds are still useful for development and smoke tests, but they
 are not the primary release target.
 
 The CI wheel build defaults to qwentts.cpp
-`4536dcdce27c3764a93a06d6bf64026b124962f5`, which includes the scheduler
+`9dbe7ea26a01b30fccb117ae5e86807c1dc23d42`, which includes the scheduler
 resets and ABI v2 cached voice-reference fields. CPU and CUDA both stay on the
 backend prompt-projection path.
 
