@@ -38,29 +38,6 @@ The CI wheel build defaults to qwentts.cpp
 resets and ABI v2 cached voice-reference fields. CPU and CUDA both stay on the
 backend prompt-projection path.
 
-## CI Wheel Builds
-
-The wheel workflow builds Linux CPU wheels, CUDA 12.8 wheels, and CUDA 13.0
-wheels. Linux x86_64 CUDA wheels use Hugging Face Jobs via the
-`hf-jobs-cpu-performance` runner label because compiling the full CUDA target
-set can exceed GitHub-hosted runner time budgets.
-
-Before the x86_64 CUDA jobs can run, set up `huggingface/jobs-actions` for this
-repository:
-
-1. Duplicate the `huggingface/jobs-actions-dispatcher` Space under your Hugging
-   Face user or org and keep it on `cpu-upgrade` or better.
-2. Use the dispatcher Space to create and install the generated GitHub App on
-   `andimarafioti/qwentts-cpp-python`.
-3. Add an `HF_TOKEN` with Jobs permissions to the dispatcher Space secrets.
-4. Trigger the wheel workflow again. Jobs with `runs-on: hf-jobs-*` should then
-   be picked up by ephemeral Hugging Face Jobs runners.
-
-If the dispatcher is not installed or the Space is asleep, the x86_64 CUDA jobs
-will stay queued with no available runner. The Linux aarch64 CUDA wheels still
-use `ubuntu-24.04-arm`; Hugging Face Jobs runner labels do not currently select
-an ARM64 GitHub Actions host.
-
 `QWENTTS_CPP_WHEEL_BUILD_TAG` is useful for local wheelhouses. For public
 indexes, publish one backend flavor per package/version/platform compatibility
 tag; otherwise pip has no way to choose between CPU and CUDA binaries.
