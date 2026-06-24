@@ -1,0 +1,141 @@
+name: Publish
+
+"on":
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      qwentts_ref:
+        description: qwentts.cpp commit, tag, or branch to build
+        required: true
+        default: 4536dcdce27c3764a93a06d6bf64026b124962f5
+
+permissions:
+  contents: read
+
+jobs:
+  build-wheels:
+    name: Linux ${{ matrix.arch }} CUDA 12.8 wheel
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: hf-jobs-cpu-performance
+            cuda_repo_arch: x86_64
+            cuda_package_suffix: "12-8"
+            cuda_home: /usr/local/cuda-12.8
+            cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual
+            build_jobs: "16"
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            cuda_repo_arch: sbsa
+            cuda_package_suffix: "12-8"
+            cuda_home: /usr/local/cuda-12.8
+            cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual
+            build_jobs: "2"
+    env:
+      QWENTTS_CPP_BACKEND: cuda
+      QWENTTS_CPP_BUILD_JOBS: ${{ matrix.build_jobs }}
+      QWENTTS_CPP_WHEEL_BUILD_TAG: 1cu128
+      QWENTTS_REF: ${{ inputs.qwentts_ref || '4536dcdce27c3764a93a06d6bf64026b124962f5' }}
+      CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
+          sudo apt-get clean
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip build wheel
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build patchelf wget ca-certificates
+
+      - name: Install CUDA toolkit
+        run: |
+          wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/${{ matrix.cuda_repo_arch }}/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cuda-nvcc-${{ matrix.cuda_package_suffix }} \
+            cuda-cudart-dev-${{ matrix.cuda_package_suffix }} \
+            libcublas-dev-${{ matrix.cuda_package_suffix }}
+          echo "${{ matrix.cuda_home }}/bin" >> "$GITHUB_PATH"
+          echo "CUDA_HOME=${{ matrix.cuda_home }}" >> "$GITHUB_ENV"
+          echo "CMAKE_CUDA_COMPILER=${{ matrix.cuda_home }}/bin/nvcc" >> "$GITHUB_ENV"
+
+      - name: Fetch qwentts.cpp
+        run: |
+          git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
+          git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
+          git -C third_party/qwentts.cpp submodule update --init --recursive
+
+      - name: Build wheel
+        run: |
+          python scripts/build_native.py \
+            --source third_party/qwentts.cpp \
+            --backend cuda \
+            --clean \
+            --cmake-arg=-G \
+            --cmake-arg=Ninja \
+            --cmake-arg="-DCMAKE_CUDA_ARCHITECTURES=$CUDA_ARCHITECTURES"
+          python -m build --wheel
+          mkdir -p wheelhouse
+          cp dist/*.whl wheelhouse/
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wheel-${{ matrix.arch }}
+          path: wheelhouse/*.whl
+
+  check:
+    name: Check distributions
+    needs: build-wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: "latest"
+          enable-cache: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+
+      - name: Check package metadata
+        run: uvx twine check --strict dist/*
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/*
+
+  publish:
+    needs: check
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/qwentts-cpp-python/
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
