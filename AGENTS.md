@@ -16,6 +16,10 @@ only. Publishing multiple backend flavors under the same package name, version,
 and platform tag would leave pip with no reliable way to choose the intended
 runtime.
 
+The PR wheel workflow may still build CPU and CUDA 13 wheels as downloadable
+validation artifacts. Those artifacts are not uploaded to PyPI by the publish
+workflow.
+
 CUDA release wheels keep native cubins for sm_86, sm_90, and sm_120, plus PTX
 fallbacks for sm_75 and the newest supported CUDA architecture. This keeps the
 public CUDA 12.8 wheels under PyPI's default per-file upload limit while
