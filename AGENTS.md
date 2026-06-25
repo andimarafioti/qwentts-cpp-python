@@ -12,9 +12,22 @@ The workflow runs on pushed tags that match `v*`, builds the public Linux CUDA
 through the configured `pypi` environment.
 
 The public `qwentts-cpp-python` package currently publishes CUDA 12.8 wheels
-only. CPU and CUDA 13 wheels are useful validation artifacts, but publishing
-multiple backend flavors under the same package name, version, and platform tag
-would leave pip with no reliable way to choose the intended runtime.
+only. Publishing multiple backend flavors under the same package name, version,
+and platform tag would leave pip with no reliable way to choose the intended
+runtime.
+
+The PR wheel workflow may still build CPU and CUDA 13 wheels as downloadable
+validation artifacts. Those artifacts are not uploaded to PyPI by the publish
+workflow.
+
+CUDA release wheels keep native cubins for sm_86, sm_90, and sm_120, plus PTX
+fallbacks for sm_75 and the newest supported CUDA architecture. This keeps the
+public CUDA 12.8 wheels under PyPI's default per-file upload limit while
+preserving broad GPU compatibility. Ada sm_89 GPUs can run the sm_86 cubin
+through CUDA's same-major binary compatibility. DGX Spark / GB10 sm_121 uses
+PTX fallback in the public CUDA 12.8 wheels. A CUDA 13 build with native sm_121
+can avoid that fallback, but it is not the PyPI default because the deployment
+server image currently targets CUDA 12.8.
 
 To prepare a release:
 

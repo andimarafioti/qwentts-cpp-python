@@ -27,14 +27,14 @@ jobs:
             cuda_repo_arch: x86_64
             cuda_package_suffix: "12-8"
             cuda_home: /usr/local/cuda-12.8
-            cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual
+            cuda_architectures: 75-virtual;86-real;90-real;120-real;120-virtual
             build_jobs: "2"
           - arch: aarch64
             runner: ubuntu-24.04-arm
             cuda_repo_arch: sbsa
             cuda_package_suffix: "12-8"
             cuda_home: /usr/local/cuda-12.8
-            cuda_architectures: 75-virtual;80-virtual;86-real;89-real;90-real;100-real;120-real;120-virtual
+            cuda_architectures: 75-virtual;86-real;90-real;120-real;120-virtual
             build_jobs: "2"
     env:
       QWENTTS_CPP_BACKEND: cuda
