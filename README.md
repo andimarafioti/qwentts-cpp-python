@@ -41,11 +41,14 @@ The default PyPI package is built for CUDA 12.8:
 pip install qwentts-cpp-python
 ```
 
-Additional CUDA wheels are published to Hugging Face Hub as local-version
+Additional backend-specific wheels are published to Hugging Face Hub as local-version
 variants. Use them when the PyPI CUDA 12.8 wheel does not match the runtime or
 GPU target, for example DGX Spark / GB10 with CUDA 13:
 
 ```bash
+pip install "qwentts-cpp-python==0.2.0+cpu" \
+  -f https://huggingface.co/datasets/andimarafioti/qwentts-cpp-python-wheels/resolve/main/whl/cpu.html
+
 pip install "qwentts-cpp-python==0.2.0+cu124" \
   -f https://huggingface.co/datasets/andimarafioti/qwentts-cpp-python-wheels/resolve/main/whl/cu124.html
 
