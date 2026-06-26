@@ -33,6 +33,35 @@ QWENTTS_CPP_WHEEL_BUILD_TAG=1cpu python -m build --wheel
 package. CPU builds are still useful for development and smoke tests, but they
 are not the primary release target.
 
+## Installation
+
+The default PyPI package is built for CUDA 12.8:
+
+```bash
+pip install qwentts-cpp-python
+```
+
+Additional CUDA wheels are published to Hugging Face Hub as local-version
+variants. Use them when the PyPI CUDA 12.8 wheel does not match the runtime or
+GPU target, for example DGX Spark / GB10 with CUDA 13:
+
+```bash
+pip install "qwentts-cpp-python==0.2.0+cu124" \
+  -f https://huggingface.co/datasets/andimarafioti/qwentts-cpp-python-wheels/resolve/main/whl/cu124.html
+
+pip install "qwentts-cpp-python==0.2.0+cu128" \
+  -f https://huggingface.co/datasets/andimarafioti/qwentts-cpp-python-wheels/resolve/main/whl/cu128.html
+
+pip install "qwentts-cpp-python==0.2.0+cu130" \
+  -f https://huggingface.co/datasets/andimarafioti/qwentts-cpp-python-wheels/resolve/main/whl/cu130.html
+```
+
+Hugging Face raw file hosting does not expose a PyTorch-style package directory
+index, so these commands use pip's `--find-links` mode. Dependencies still
+resolve from PyPI normally. The wheels do not bundle CUDA runtime or cuBLAS
+libraries; use a base image or system installation that provides the matching
+CUDA runtime.
+
 The CI wheel build defaults to qwentts.cpp
 `9dbe7ea26a01b30fccb117ae5e86807c1dc23d42`, which includes the scheduler
 resets and ABI v2 cached voice-reference fields. CPU and CUDA both stay on the

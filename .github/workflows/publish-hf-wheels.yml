@@ -1,26 +1,30 @@
-name: qwentts-cpp-python wheels
+name: Publish Hugging Face Wheels
 
 "on":
-  pull_request:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/wheels.yml"
-      - "pyproject.toml"
-      - "setup.py"
-      - "scripts/**"
-      - "src/**"
-      - "tests/**"
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       qwentts_ref:
         description: qwentts.cpp commit, tag, or branch to build
         required: true
         default: 9dbe7ea26a01b30fccb117ae5e86807c1dc23d42
+      hf_repo_id:
+        description: Hugging Face dataset repo for wheel hosting
+        required: true
+        default: andimarafioti/qwentts-cpp-python-wheels
+
+permissions:
+  contents: read
+
+env:
+  HF_WHEEL_REPO_ID: ${{ inputs.hf_repo_id || vars.HF_WHEEL_REPO_ID || 'andimarafioti/qwentts-cpp-python-wheels' }}
+  QWENTTS_REF: ${{ inputs.qwentts_ref || '9dbe7ea26a01b30fccb117ae5e86807c1dc23d42' }}
 
 jobs:
-  linux-cuda:
-    name: Linux ${{ matrix.arch }} CUDA ${{ matrix.cuda_version }} wheel
+  build-wheels:
+    name: Linux ${{ matrix.arch }} CUDA ${{ matrix.cuda_version }} HF wheel
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -33,7 +37,7 @@ jobs:
             cuda_version: "12.4"
             cuda_package_suffix: "12-4"
             cuda_home: /usr/local/cuda-12.4
-            wheel_build_tag: 1cu124
+            flavor: cu124
             cuda_architectures: 75-virtual;80-real;86-real;90-real
             manylinux_platform: manylinux_2_35_x86_64
             build_jobs: "2"
@@ -44,7 +48,7 @@ jobs:
             cuda_version: "12.4"
             cuda_package_suffix: "12-4"
             cuda_home: /usr/local/cuda-12.4
-            wheel_build_tag: 1cu124
+            flavor: cu124
             cuda_architectures: 75-virtual;80-real;86-real;90-real
             manylinux_platform: manylinux_2_35_aarch64
             build_jobs: "2"
@@ -55,8 +59,8 @@ jobs:
             cuda_version: "12.8"
             cuda_package_suffix: "12-8"
             cuda_home: /usr/local/cuda-12.8
-            wheel_build_tag: 1cu128
-            cuda_architectures: 75-virtual;86-real;90-real;120-real;120-virtual
+            flavor: cu128
+            cuda_architectures: 75-virtual;80-real;86-real;90-real;120-real;120-virtual
             manylinux_platform: manylinux_2_39_x86_64
             build_jobs: "2"
           - arch: aarch64
@@ -66,8 +70,8 @@ jobs:
             cuda_version: "12.8"
             cuda_package_suffix: "12-8"
             cuda_home: /usr/local/cuda-12.8
-            wheel_build_tag: 1cu128
-            cuda_architectures: 75-virtual;86-real;90-real;120-real;120-virtual
+            flavor: cu128
+            cuda_architectures: 75-virtual;80-real;86-real;90-real;120-real;120-virtual
             manylinux_platform: manylinux_2_39_aarch64
             build_jobs: "2"
           - arch: x86_64
@@ -77,7 +81,7 @@ jobs:
             cuda_version: "13.0"
             cuda_package_suffix: "13-0"
             cuda_home: /usr/local/cuda-13.0
-            wheel_build_tag: 1cu130
+            flavor: cu130
             cuda_architectures: 75-virtual;80-real;86-real;90-real;121-real
             manylinux_platform: manylinux_2_39_x86_64
             build_jobs: "2"
@@ -88,18 +92,18 @@ jobs:
             cuda_version: "13.0"
             cuda_package_suffix: "13-0"
             cuda_home: /usr/local/cuda-13.0
-            wheel_build_tag: 1cu130
+            flavor: cu130
             cuda_architectures: 75-virtual;80-real;86-real;90-real;121-real
             manylinux_platform: manylinux_2_39_aarch64
             build_jobs: "2"
     env:
       QWENTTS_CPP_BACKEND: cuda
       QWENTTS_CPP_BUILD_JOBS: ${{ matrix.build_jobs }}
-      QWENTTS_CPP_WHEEL_BUILD_TAG: ${{ matrix.wheel_build_tag }}
-      QWENTTS_REF: ${{ inputs.qwentts_ref || '9dbe7ea26a01b30fccb117ae5e86807c1dc23d42' }}
       CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -137,6 +141,7 @@ jobs:
 
       - name: Build wheel
         run: |
+          python scripts/set_local_version.py "${{ matrix.flavor }}"
           python scripts/build_native.py \
             --source third_party/qwentts.cpp \
             --backend cuda \
@@ -158,62 +163,44 @@ jobs:
             -w wheelhouse \
             dist/*.whl
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: qwentts-cpp-python-linux-${{ matrix.arch }}-cuda-${{ matrix.wheel_build_tag }}
+          name: hf-wheel-${{ matrix.flavor }}-${{ matrix.arch }}
           path: wheelhouse/*.whl
 
-  linux-cpu:
-    name: Linux ${{ matrix.arch }} CPU wheel
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-24.04
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
-    env:
-      QWENTTS_CPP_BACKEND: cpu
-      QWENTTS_CPP_BUILD_JOBS: "2"
-      QWENTTS_CPP_WHEEL_BUILD_TAG: 1cpu
-      QWENTTS_REF: ${{ inputs.qwentts_ref || '9dbe7ea26a01b30fccb117ae5e86807c1dc23d42' }}
+  publish-hf:
+    name: Publish HF wheel index
+    needs: build-wheels
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install build tools
-        run: |
-          python -m pip install --upgrade pip auditwheel build wheel
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cmake ninja-build patchelf ca-certificates
-
-      - name: Fetch qwentts.cpp
-        run: |
-          git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
-          git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
-          git -C third_party/qwentts.cpp submodule update --init --recursive
-
-      - name: Build wheel
-        run: |
-          python scripts/build_native.py \
-            --source third_party/qwentts.cpp \
-            --backend cpu \
-            --clean \
-            --cmake-arg=-G \
-            --cmake-arg=Ninja
-          python -m build --wheel
-          mkdir -p wheelhouse
-          python -m auditwheel repair \
-            --plat manylinux_2_39_${{ matrix.arch }} \
-            -w wheelhouse \
-            dist/*.whl
-
-      - uses: actions/upload-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: qwentts-cpp-python-linux-${{ matrix.arch }}-cpu
-          path: wheelhouse/*.whl
+          pattern: hf-wheel-*
+          path: dist
+          merge-multiple: true
+
+      - name: Build wheel index
+        run: |
+          python -m pip install --upgrade pip huggingface-hub twine
+          python -m twine check --strict dist/*.whl
+          python scripts/prepare_hf_wheel_repo.py \
+            --dist dist \
+            --out hf-upload \
+            --repo-id "$HF_WHEEL_REPO_ID"
+
+      - name: Upload to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python scripts/upload_hf_wheels.py \
+            --folder hf-upload \
+            --repo-id "$HF_WHEEL_REPO_ID" \
+            --commit-message "Update qwentts-cpp-python wheels for ${GITHUB_REF_NAME}"
