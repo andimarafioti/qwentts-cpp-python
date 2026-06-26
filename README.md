@@ -47,16 +47,16 @@ GPU target, for example DGX Spark / GB10 with CUDA 13:
 
 ```bash
 pip install "qwentts-cpp-python==0.2.0+cpu" \
-  -f https://huggingface.co/datasets/andimarafioti/qwentts-cpp-python-wheels/resolve/main/whl/cpu.html
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cpu.html
 
 pip install "qwentts-cpp-python==0.2.0+cu124" \
-  -f https://huggingface.co/datasets/andimarafioti/qwentts-cpp-python-wheels/resolve/main/whl/cu124.html
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cu124.html
 
 pip install "qwentts-cpp-python==0.2.0+cu128" \
-  -f https://huggingface.co/datasets/andimarafioti/qwentts-cpp-python-wheels/resolve/main/whl/cu128.html
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cu128.html
 
 pip install "qwentts-cpp-python==0.2.0+cu130" \
-  -f https://huggingface.co/datasets/andimarafioti/qwentts-cpp-python-wheels/resolve/main/whl/cu130.html
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cu130.html
 ```
 
 Hugging Face raw file hosting does not expose a PyTorch-style package directory
