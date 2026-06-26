@@ -47,23 +47,22 @@ GPU target, for example DGX Spark / GB10 with CUDA 13:
 
 ```bash
 pip install "qwentts-cpp-python==0.3.0+cpu" \
-  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cpu.html
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cpu
 
 pip install "qwentts-cpp-python==0.3.0+cu124" \
-  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cu124.html
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu124
 
 pip install "qwentts-cpp-python==0.3.0+cu128" \
-  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cu128.html
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
 
 pip install "qwentts-cpp-python==0.3.0+cu130" \
-  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cu130.html
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
 ```
 
-Hugging Face raw file hosting does not expose a PyTorch-style package directory
-index, so these commands use pip's `--find-links` mode. Dependencies still
-resolve from PyPI normally. The wheels do not bundle CUDA runtime or cuBLAS
-libraries; use a base image or system installation that provides the matching
-CUDA runtime.
+These commands use pip's `--find-links` mode against the Hugging Face directory
+page for the selected flavor. Dependencies still resolve from PyPI normally.
+The wheels do not bundle CUDA runtime or cuBLAS libraries; use a base image or
+system installation that provides the matching CUDA runtime.
 
 The Hugging Face wheel pages may contain multiple Linux compatibility tags for
 the same backend flavor. For example, the `cu128` page can host both
