@@ -13,13 +13,13 @@ name: Publish Hugging Face Wheels
       hf_repo_id:
         description: Hugging Face dataset repo for wheel hosting
         required: true
-        default: andimarafioti/qwentts-cpp-python-wheels
+        default: andito/qwentts-cpp-python-wheels
 
 permissions:
   contents: read
 
 env:
-  HF_WHEEL_REPO_ID: ${{ inputs.hf_repo_id || vars.HF_WHEEL_REPO_ID || 'andimarafioti/qwentts-cpp-python-wheels' }}
+  HF_WHEEL_REPO_ID: ${{ inputs.hf_repo_id || vars.HF_WHEEL_REPO_ID || 'andito/qwentts-cpp-python-wheels' }}
   QWENTTS_REF: ${{ inputs.qwentts_ref || '9dbe7ea26a01b30fccb117ae5e86807c1dc23d42' }}
 
 jobs:
