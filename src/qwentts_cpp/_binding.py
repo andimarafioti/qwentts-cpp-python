@@ -6,6 +6,7 @@ import queue
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 from typing import Any, Iterator, Sequence, Tuple
@@ -97,12 +98,74 @@ class QtTTSParams(ctypes.Structure):
     ]
 
 
+class QtVoiceRef(ctypes.Structure):
+    _fields_ = [
+        ("ref_spk_emb", ctypes.POINTER(ctypes.c_float)),
+        ("ref_spk_dim", ctypes.c_int),
+        ("ref_codes", ctypes.POINTER(ctypes.c_int32)),
+        ("ref_T", ctypes.c_int),
+        ("num_codebooks", ctypes.c_int),
+    ]
+
+
+@dataclass(frozen=True)
+class VoiceRef:
+    """Reusable Base voice-clone conditioning extracted by qwentts.cpp."""
+
+    ref_spk_emb: np.ndarray
+    ref_codes: np.ndarray
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "ref_spk_emb", _prepare_speaker_embedding(self.ref_spk_emb))
+        object.__setattr__(self, "ref_codes", _prepare_rvq_matrix(self.ref_codes))
+
+    @property
+    def num_codebooks(self) -> int:
+        return int(self.ref_codes.shape[0])
+
+    @property
+    def ref_T(self) -> int:
+        return int(self.ref_codes.shape[1])
+
+    def save(
+        self,
+        spk_path: str | os.PathLike[str],
+        rvq_path: str | os.PathLike[str],
+        *,
+        code_bits: int = RVQ_CODE_BITS,
+    ) -> tuple[Path, Path]:
+        """Write this reference as qwentts.cpp-compatible `.spk` and `.rvq` files."""
+        return save_voice_ref(self, spk_path, rvq_path, code_bits=code_bits)
+
+
+def _prepare_speaker_embedding(embedding: np.ndarray) -> np.ndarray:
+    spk = np.ascontiguousarray(embedding, dtype=np.float32).reshape(-1)
+    if spk.size == 0:
+        raise ValueError("Speaker embedding must not be empty")
+    return spk
+
+
+def _prepare_rvq_matrix(codes: np.ndarray) -> np.ndarray:
+    rvq = np.asarray(codes, dtype=np.int32)
+    if rvq.ndim != 2 or rvq.shape[0] <= 0 or rvq.shape[1] <= 0:
+        raise ValueError("RVQ codes must have shape [num_codebooks, T] with positive dimensions")
+    return np.ascontiguousarray(rvq, dtype=np.int32)
+
+
 def load_speaker_embedding(path: str | os.PathLike[str]) -> np.ndarray:
     """Load a qwentts.cpp `.spk` file as a contiguous float32 vector."""
     data = np.fromfile(path, dtype=np.float32)
     if data.size == 0:
         raise ValueError(f"Speaker embedding file is empty: {path}")
-    return np.ascontiguousarray(data, dtype=np.float32)
+    return _prepare_speaker_embedding(data)
+
+
+def save_speaker_embedding(path: str | os.PathLike[str], embedding: np.ndarray) -> Path:
+    """Write a qwentts.cpp `.spk` file containing raw float32 speaker values."""
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    _prepare_speaker_embedding(embedding).tofile(output)
+    return output
 
 
 def load_rvq_codes(
@@ -131,6 +194,47 @@ def load_rvq_codes(
     return codes.reshape(int(num_codebooks), n_codes // int(num_codebooks))
 
 
+def save_rvq_codes(
+    path: str | os.PathLike[str],
+    codes: np.ndarray,
+    *,
+    code_bits: int = RVQ_CODE_BITS,
+) -> Path:
+    """Write qwentts.cpp `.rvq` packed 11-bit reference codec codes."""
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(_pack_rvq_codes(_prepare_rvq_matrix(codes).reshape(-1), int(code_bits)))
+    return output
+
+
+def load_voice_ref(
+    spk_path: str | os.PathLike[str],
+    rvq_path: str | os.PathLike[str],
+    num_codebooks: int,
+    *,
+    code_bits: int = RVQ_CODE_BITS,
+) -> VoiceRef:
+    """Load reusable Base voice-clone conditioning from `.spk` and `.rvq` files."""
+    return VoiceRef(
+        ref_spk_emb=load_speaker_embedding(spk_path),
+        ref_codes=load_rvq_codes(rvq_path, num_codebooks, code_bits=code_bits),
+    )
+
+
+def save_voice_ref(
+    voice_ref: VoiceRef,
+    spk_path: str | os.PathLike[str],
+    rvq_path: str | os.PathLike[str],
+    *,
+    code_bits: int = RVQ_CODE_BITS,
+) -> tuple[Path, Path]:
+    """Write a reusable Base voice-clone reference to `.spk` and `.rvq` files."""
+    ref = VoiceRef(voice_ref.ref_spk_emb, voice_ref.ref_codes)
+    spk = save_speaker_embedding(spk_path, ref.ref_spk_emb)
+    rvq = save_rvq_codes(rvq_path, ref.ref_codes, code_bits=code_bits)
+    return spk, rvq
+
+
 def _unpack_rvq_codes(packed: np.ndarray, n_codes: int, code_bits: int) -> np.ndarray:
     mask = (1 << code_bits) - 1
     out = np.empty(n_codes, dtype=np.int32)
@@ -147,6 +251,37 @@ def _unpack_rvq_codes(packed: np.ndarray, n_codes: int, code_bits: int) -> np.nd
         acc >>= code_bits
         bits_in_acc -= code_bits
     return out
+
+
+def _pack_rvq_codes(codes: np.ndarray, code_bits: int) -> bytes:
+    if code_bits <= 0 or code_bits >= 32:
+        raise ValueError(f"code_bits must be in [1, 31], got {code_bits}")
+    flat = np.asarray(codes, dtype=np.int64).reshape(-1)
+    if flat.size == 0:
+        raise ValueError("RVQ codes must not be empty")
+
+    max_code = (1 << code_bits) - 1
+    invalid = (flat < 0) | (flat > max_code)
+    if bool(np.any(invalid)):
+        bad = int(flat[np.nonzero(invalid)[0][0]])
+        raise ValueError(f"RVQ code {bad} is outside the {code_bits}-bit range [0, {max_code}]")
+
+    total_bits = int(flat.size) * int(code_bits)
+    out = bytearray((total_bits + 7) // 8)
+    acc = 0
+    bits_in_acc = 0
+    out_pos = 0
+    for code in flat.tolist():
+        acc |= int(code) << bits_in_acc
+        bits_in_acc += int(code_bits)
+        while bits_in_acc >= 8:
+            out[out_pos] = acc & 0xFF
+            out_pos += 1
+            acc >>= 8
+            bits_in_acc -= 8
+    if bits_in_acc > 0:
+        out[out_pos] = acc & 0xFF
+    return bytes(out)
 
 
 def _as_utf8(value: str | os.PathLike[str] | None, keepalive: list[object]) -> bytes | None:
@@ -224,6 +359,8 @@ class QwenLibrary:
         self._has_qt_num_codebooks = False
         self._has_qt_n_speakers = False
         self._has_qt_speaker_name = False
+        self._has_qt_extract_voice_ref = False
+        self._has_qt_voice_ref_free = False
         self._lib = self._load_cdll(self.path)
         self._bind()
 
@@ -289,6 +426,23 @@ class QwenLibrary:
             self._has_qt_speaker_name = True
         except AttributeError:
             self._has_qt_speaker_name = False
+        try:
+            lib.qt_extract_voice_ref.argtypes = [
+                ctypes.c_void_p,
+                ctypes.POINTER(ctypes.c_float),
+                ctypes.c_int,
+                ctypes.POINTER(QtVoiceRef),
+            ]
+            lib.qt_extract_voice_ref.restype = ctypes.c_int
+            self._has_qt_extract_voice_ref = True
+        except AttributeError:
+            self._has_qt_extract_voice_ref = False
+        try:
+            lib.qt_voice_ref_free.argtypes = [ctypes.POINTER(QtVoiceRef)]
+            lib.qt_voice_ref_free.restype = None
+            self._has_qt_voice_ref_free = True
+        except AttributeError:
+            self._has_qt_voice_ref_free = False
 
     def version(self) -> str:
         return self._lib.qt_version().decode("utf-8", errors="replace")
@@ -333,6 +487,7 @@ class QwenTTS:
         self._lock = threading.Lock()
         self.last_synthesize_profile: dict[str, Any] | None = None
         self.last_stream_profile: dict[str, Any] | None = None
+        self.last_extract_voice_ref_profile: dict[str, Any] | None = None
         self._init(talker_path, codec_path, use_fa=use_fa, clamp_fp16=clamp_fp16)
 
     @classmethod
@@ -429,6 +584,79 @@ class QwenTTS:
 
     def load_rvq_codes(self, path: str | os.PathLike[str], *, code_bits: int = RVQ_CODE_BITS) -> np.ndarray:
         return load_rvq_codes(path, self.num_codebooks(), code_bits=code_bits)
+
+    def load_voice_ref(
+        self,
+        spk_path: str | os.PathLike[str],
+        rvq_path: str | os.PathLike[str],
+        *,
+        code_bits: int = RVQ_CODE_BITS,
+    ) -> VoiceRef:
+        return load_voice_ref(spk_path, rvq_path, self.num_codebooks(), code_bits=code_bits)
+
+    def extract_voice_ref(self, ref_audio_24k: np.ndarray) -> VoiceRef:
+        """Extract reusable Base voice-clone conditioning from 24 kHz mono audio."""
+        if not (self.library._has_qt_extract_voice_ref and self.library._has_qt_voice_ref_free):
+            raise QwenTTSError("qt_extract_voice_ref is unavailable; voice reference extraction requires qwentts.cpp ABI v2")
+
+        profile: dict[str, Any] = {}
+        start = time.perf_counter()
+        audio = np.ascontiguousarray(ref_audio_24k, dtype=np.float32).reshape(-1)
+        if audio.size == 0:
+            raise ValueError("ref_audio_24k must not be empty")
+        profile["audio_prepare_ms"] = (time.perf_counter() - start) * 1000
+        profile["ref_n_samples"] = int(audio.size)
+
+        out = QtVoiceRef()
+        lock_start = time.perf_counter()
+        with self._lock:
+            profile["lock_wait_ms"] = (time.perf_counter() - lock_start) * 1000
+            native_start = time.perf_counter()
+            rc = self.library._lib.qt_extract_voice_ref(
+                self._require_ctx(),
+                audio.ctypes.data_as(ctypes.POINTER(ctypes.c_float)),
+                int(audio.size),
+                ctypes.byref(out),
+            )
+            profile["native_extract_ms"] = (time.perf_counter() - native_start) * 1000
+
+        try:
+            if rc != QwenStatus.OK:
+                raise QwenTTSError(self.library.last_error() or f"qt_extract_voice_ref failed with status {rc}")
+            if not out.ref_spk_emb or out.ref_spk_dim <= 0:
+                raise QwenTTSError("qt_extract_voice_ref returned an empty speaker embedding")
+            if not out.ref_codes or out.num_codebooks <= 0 or out.ref_T <= 0:
+                raise QwenTTSError("qt_extract_voice_ref returned empty RVQ codes")
+
+            copy_start = time.perf_counter()
+            spk = np.ctypeslib.as_array(out.ref_spk_emb, shape=(int(out.ref_spk_dim),)).copy()
+            codes = np.ctypeslib.as_array(
+                out.ref_codes,
+                shape=(int(out.num_codebooks) * int(out.ref_T),),
+            ).copy()
+            codes = codes.reshape(int(out.num_codebooks), int(out.ref_T))
+            profile["copy_ms"] = (time.perf_counter() - copy_start) * 1000
+            profile["ref_spk_dim"] = int(out.ref_spk_dim)
+            profile["num_codebooks"] = int(out.num_codebooks)
+            profile["ref_T"] = int(out.ref_T)
+            profile["total_ms"] = (time.perf_counter() - start) * 1000
+            self.last_extract_voice_ref_profile = profile
+            return VoiceRef(ref_spk_emb=spk, ref_codes=codes)
+        finally:
+            self.library._lib.qt_voice_ref_free(ctypes.byref(out))
+
+    def save_voice_ref(
+        self,
+        ref_audio_24k: np.ndarray,
+        spk_path: str | os.PathLike[str],
+        rvq_path: str | os.PathLike[str],
+        *,
+        code_bits: int = RVQ_CODE_BITS,
+    ) -> VoiceRef:
+        """Extract and save reusable Base voice-clone conditioning from reference audio."""
+        voice_ref = self.extract_voice_ref(ref_audio_24k)
+        voice_ref.save(spk_path, rvq_path, code_bits=code_bits)
+        return voice_ref
 
     def set_log_callback(self, callback) -> None:
         self.library.set_log_callback(callback)
