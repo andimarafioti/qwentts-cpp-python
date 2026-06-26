@@ -20,12 +20,12 @@ The PR wheel workflow may still build CPU and CUDA 13 wheels as downloadable
 validation artifacts. Those artifacts are not uploaded to PyPI by the publish
 workflow.
 
-Additional CUDA wheels can be published to Hugging Face Hub by
+Additional backend-specific wheels can be published to Hugging Face Hub by
 `.github/workflows/publish-hf-wheels.yml`. That workflow builds local-version
-variants such as `0.2.0+cu124`, `0.2.0+cu128`, and `0.2.0+cu130`, prepares
-static `--find-links` pages, creates the public dataset repo if needed, and
-uploads the wheel index using the `HF_TOKEN` repository secret. Do not upload
-those local-version CUDA variants to PyPI.
+variants such as `0.2.0+cpu`, `0.2.0+cu124`, `0.2.0+cu128`, and
+`0.2.0+cu130`, prepares static `--find-links` pages, creates the public dataset
+repo if needed, and uploads the wheel index using the `HF_TOKEN` repository
+secret. Do not upload those local-version variants to PyPI.
 
 CUDA release wheels keep native cubins for sm_86, sm_90, and sm_120, plus PTX
 fallbacks for sm_75 and the newest supported CUDA architecture. This keeps the

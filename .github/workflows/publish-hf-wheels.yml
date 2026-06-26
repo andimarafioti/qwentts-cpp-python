@@ -168,9 +168,71 @@ jobs:
           name: hf-wheel-${{ matrix.flavor }}-${{ matrix.arch }}
           path: wheelhouse/*.whl
 
+  build-cpu-wheels:
+    name: Linux ${{ matrix.arch }} CPU HF wheel
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+            manylinux_platform: manylinux_2_35_x86_64
+            build_jobs: "2"
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+            manylinux_platform: manylinux_2_35_aarch64
+            build_jobs: "2"
+    env:
+      QWENTTS_CPP_BACKEND: cpu
+      QWENTTS_CPP_BUILD_JOBS: ${{ matrix.build_jobs }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip auditwheel build wheel
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build patchelf ca-certificates
+
+      - name: Fetch qwentts.cpp
+        run: |
+          git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
+          git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
+          git -C third_party/qwentts.cpp submodule update --init --recursive
+
+      - name: Build wheel
+        run: |
+          python scripts/set_local_version.py cpu
+          python scripts/build_native.py \
+            --source third_party/qwentts.cpp \
+            --backend cpu \
+            --clean \
+            --cmake-arg=-G \
+            --cmake-arg=Ninja
+          python -m build --wheel
+          mkdir -p wheelhouse
+          python -m auditwheel repair \
+            --plat ${{ matrix.manylinux_platform }} \
+            -w wheelhouse \
+            dist/*.whl
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hf-wheel-cpu-${{ matrix.arch }}
+          path: wheelhouse/*.whl
+
   publish-hf:
     name: Publish HF wheel index
-    needs: build-wheels
+    needs:
+      - build-wheels
+      - build-cpu-wheels
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3

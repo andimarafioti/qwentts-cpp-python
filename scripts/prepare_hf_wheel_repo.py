@@ -106,7 +106,7 @@ def main() -> int:
                 "",
                 "# qwentts-cpp-python wheels",
                 "",
-                "Optional CUDA wheel variants for `qwentts-cpp-python`.",
+                "Optional backend-specific wheel variants for `qwentts-cpp-python`.",
                 "",
                 "The default PyPI package is CUDA 12.8:",
                 "",
@@ -114,7 +114,7 @@ def main() -> int:
                 "pip install qwentts-cpp-python",
                 "```",
                 "",
-                "Install a CUDA-specific wheel from this repository with `--find-links`:",
+                "Install a backend-specific wheel from this repository with `--find-links`:",
                 "",
                 "```bash",
                 *[
