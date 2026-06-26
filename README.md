@@ -65,6 +65,15 @@ resolve from PyPI normally. The wheels do not bundle CUDA runtime or cuBLAS
 libraries; use a base image or system installation that provides the matching
 CUDA runtime.
 
+The Hugging Face wheel pages may contain multiple Linux compatibility tags for
+the same backend flavor. For example, the `cu128` page can host both
+`manylinux_2_35` wheels for Ubuntu 22.04+ and `manylinux_2_39` wheels for
+Ubuntu 24.04+. Pip selects the newest compatible wheel for the current machine.
+
+The full wheel matrix is published manually through the `Publish Hugging Face
+Wheels` workflow. Pull requests do not build every CUDA/Linux variant by
+default.
+
 The CI wheel build defaults to qwentts.cpp
 `9dbe7ea26a01b30fccb117ae5e86807c1dc23d42`, which includes the scheduler
 resets and ABI v2 cached voice-reference fields. CPU and CUDA both stay on the
