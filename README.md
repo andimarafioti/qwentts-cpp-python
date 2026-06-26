@@ -46,16 +46,16 @@ variants. Use them when the PyPI CUDA 12.8 wheel does not match the runtime or
 GPU target, for example DGX Spark / GB10 with CUDA 13:
 
 ```bash
-pip install "qwentts-cpp-python==0.2.0+cpu" \
+pip install "qwentts-cpp-python==0.3.0+cpu" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cpu.html
 
-pip install "qwentts-cpp-python==0.2.0+cu124" \
+pip install "qwentts-cpp-python==0.3.0+cu124" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cu124.html
 
-pip install "qwentts-cpp-python==0.2.0+cu128" \
+pip install "qwentts-cpp-python==0.3.0+cu128" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cu128.html
 
-pip install "qwentts-cpp-python==0.2.0+cu130" \
+pip install "qwentts-cpp-python==0.3.0+cu130" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cu130.html
 ```
 
@@ -94,6 +94,19 @@ passing precomputed latents:
 
 - `.spk`: raw float32 speaker embedding from `qwen-codec --talker`
 - `.rvq`: packed 11-bit reference codec stream from `qwen-codec`
+
+The wrapper can create those files in-process from decoded mono float32 audio at
+24 kHz:
+
+```python
+from qwentts_cpp import QwenTTS
+
+tts = QwenTTS.from_pretrained("Qwen/Qwen3-TTS-12Hz-1.7B-Base", quant="Q4_K_M")
+
+# ref_audio_24k is a 1-D numpy float32 array, already resampled to 24 kHz.
+voice_ref = tts.extract_voice_ref(ref_audio_24k)
+voice_ref.save("reference.spk", "reference.rvq")
+```
 
 ```python
 from qwentts_cpp import QwenTTS, load_speaker_embedding
