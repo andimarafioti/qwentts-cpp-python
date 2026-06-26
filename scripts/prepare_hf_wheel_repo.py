@@ -118,7 +118,7 @@ def main() -> int:
                 "",
                 "```bash",
                 *[
-                    f'pip install "qwentts-cpp-python=={versions_by_flavor[flavor]}" -f https://huggingface.co/datasets/{args.repo_id}/resolve/main/whl/{flavor}.html'
+                    f'pip install "qwentts-cpp-python=={versions_by_flavor[flavor]}" -f https://huggingface.co/datasets/{args.repo_id}/tree/main/whl/{flavor}'
                     for flavor in sorted(versions_by_flavor)
                 ],
                 "```",
