@@ -9,7 +9,7 @@ name: Publish
       qwentts_ref:
         description: qwentts.cpp commit, tag, or branch to build
         required: true
-        default: 9dbe7ea26a01b30fccb117ae5e86807c1dc23d42
+        default: 7df559a8ca25f66fee02970514ebe5f01dee9055
 
 permissions:
   contents: read
@@ -40,7 +40,7 @@ jobs:
       QWENTTS_CPP_BACKEND: cuda
       QWENTTS_CPP_BUILD_JOBS: ${{ matrix.build_jobs }}
       QWENTTS_CPP_WHEEL_BUILD_TAG: 1cu128
-      QWENTTS_REF: ${{ inputs.qwentts_ref || '9dbe7ea26a01b30fccb117ae5e86807c1dc23d42' }}
+      QWENTTS_REF: ${{ inputs.qwentts_ref || '7df559a8ca25f66fee02970514ebe5f01dee9055' }}
       CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
