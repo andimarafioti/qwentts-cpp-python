@@ -29,7 +29,25 @@ the `HF_TOKEN` repository secret. Do not upload those local-version variants to
 PyPI.
 
 The full Linux wheel matrix is intentionally not run for every pull request.
-Use the manual wheel workflows when validating or publishing wheel artifacts.
+Relevant pull requests run the CPU and CUDA validation matrix automatically.
+Use the publishing workflow for the additional older-Linux variants.
+
+## Updating the qwentts.cpp Pin
+
+To rebuild against a newer qwentts.cpp revision:
+
+1. Resolve the latest upstream `master` commit to its full SHA.
+2. Update every default and event fallback for `QWENTTS_REF` in
+   `.github/workflows/wheels.yml`, `.github/workflows/publish.yml`, and
+   `.github/workflows/publish-hf-wheels.yml`.
+3. Update the pinned revision and its summary in `README.md`.
+4. Open a focused pull request containing the pin and documentation changes.
+   The pull request workflow builds the validation wheel matrix automatically;
+   do not dispatch it manually.
+5. Review the runner results and downloadable wheel artifacts before merging.
+
+Do not include locally generated libraries, wheels, sdists, `build/`, or
+`dist/` contents in the pull request.
 
 CUDA release wheels keep native cubins for sm_86, sm_90, and sm_120, plus PTX
 fallbacks for sm_75 and the newest supported CUDA architecture. This keeps the

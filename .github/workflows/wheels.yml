@@ -1,12 +1,22 @@
 name: qwentts-cpp-python wheels
 
 "on":
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/wheels.yml"
+      - "pyproject.toml"
+      - "setup.py"
+      - "scripts/**"
+      - "src/**"
+      - "tests/**"
   workflow_dispatch:
     inputs:
       qwentts_ref:
         description: qwentts.cpp commit, tag, or branch to build
         required: true
-        default: 9dbe7ea26a01b30fccb117ae5e86807c1dc23d42
+        default: 7df559a8ca25f66fee02970514ebe5f01dee9055
 
 jobs:
   linux-cuda:
@@ -86,7 +96,7 @@ jobs:
       QWENTTS_CPP_BACKEND: cuda
       QWENTTS_CPP_BUILD_JOBS: ${{ matrix.build_jobs }}
       QWENTTS_CPP_WHEEL_BUILD_TAG: ${{ matrix.wheel_build_tag }}
-      QWENTTS_REF: ${{ inputs.qwentts_ref || '9dbe7ea26a01b30fccb117ae5e86807c1dc23d42' }}
+      QWENTTS_REF: ${{ inputs.qwentts_ref || '7df559a8ca25f66fee02970514ebe5f01dee9055' }}
       CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
     steps:
       - uses: actions/checkout@v4
@@ -168,7 +178,7 @@ jobs:
       QWENTTS_CPP_BACKEND: cpu
       QWENTTS_CPP_BUILD_JOBS: "2"
       QWENTTS_CPP_WHEEL_BUILD_TAG: 1cpu
-      QWENTTS_REF: ${{ inputs.qwentts_ref || '9dbe7ea26a01b30fccb117ae5e86807c1dc23d42' }}
+      QWENTTS_REF: ${{ inputs.qwentts_ref || '7df559a8ca25f66fee02970514ebe5f01dee9055' }}
     steps:
       - uses: actions/checkout@v4
 

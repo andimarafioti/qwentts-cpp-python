@@ -69,14 +69,13 @@ the same backend flavor. For example, the `cu128` page can host both
 `manylinux_2_35` wheels for Ubuntu 22.04+ and `manylinux_2_39` wheels for
 Ubuntu 24.04+. Pip selects the newest compatible wheel for the current machine.
 
-The full wheel matrix is published manually through the `Publish Hugging Face
-Wheels` workflow. Pull requests do not build every CUDA/Linux variant by
-default.
+Relevant pull requests automatically build the CPU and CUDA validation matrix.
+The additional older-Linux variants are built when publishing the full matrix
+through the `Publish Hugging Face Wheels` workflow.
 
 The CI wheel build defaults to qwentts.cpp
-`9dbe7ea26a01b30fccb117ae5e86807c1dc23d42`, which includes the scheduler
-resets and ABI v2 cached voice-reference fields. CPU and CUDA both stay on the
-backend prompt-projection path.
+`7df559a8ca25f66fee02970514ebe5f01dee9055`, which retains ABI v2 and includes
+the latest static-graph, streaming-decode, and widened voice-route changes.
 
 `QWENTTS_CPP_WHEEL_BUILD_TAG` is useful for local wheelhouses. For public
 indexes, publish one backend flavor per package/version/platform compatibility
