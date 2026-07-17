@@ -16,9 +16,9 @@ only. Publishing multiple backend flavors under the same package name, version,
 and platform tag would leave pip with no reliable way to choose the intended
 runtime.
 
-The PR wheel workflow may still build CPU and CUDA 13 wheels as downloadable
-validation artifacts. Those artifacts are not uploaded to PyPI by the publish
-workflow.
+The validation wheel workflow is dispatch-only. Its downloadable artifacts are
+not consumed by either publishing workflow; both publishers rebuild their own
+wheels from the pinned qwentts.cpp source.
 
 Additional backend-specific wheels can be published to Hugging Face Hub by
 manually dispatching `.github/workflows/publish-hf-wheels.yml`. That workflow
@@ -28,9 +28,9 @@ creates the public dataset repo if needed, and uploads the wheel index using
 the `HF_TOKEN` repository secret. Do not upload those local-version variants to
 PyPI.
 
-The full Linux wheel matrix is intentionally not run for every pull request.
-Relevant pull requests run the CPU and CUDA validation matrix automatically.
-Use the publishing workflow for the additional older-Linux variants.
+Pull requests do not run the Linux wheel matrix. Do not run the validation
+workflow solely as a publishing prerequisite, because the publishing workflows
+perform fresh builds.
 
 ## Updating the qwentts.cpp Pin
 
@@ -42,9 +42,9 @@ To rebuild against a newer qwentts.cpp revision:
    `.github/workflows/publish-hf-wheels.yml`.
 3. Update the pinned revision and its summary in `README.md`.
 4. Open a focused pull request containing the pin and documentation changes.
-   The pull request workflow builds the validation wheel matrix automatically;
-   do not dispatch it manually.
-5. Review the runner results and downloadable wheel artifacts before merging.
+5. After merging, use the normal publishing paths when a release is intended:
+   the version-bump and tag flow below for PyPI, and the Hugging Face publishing
+   workflow for backend-specific wheels. Each publisher performs a fresh build.
 
 Do not include locally generated libraries, wheels, sdists, `build/`, or
 `dist/` contents in the pull request.
