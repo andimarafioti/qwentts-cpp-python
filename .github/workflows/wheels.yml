@@ -1,16 +1,6 @@
 name: qwentts-cpp-python wheels
 
 "on":
-  pull_request:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/wheels.yml"
-      - "pyproject.toml"
-      - "setup.py"
-      - "scripts/**"
-      - "src/**"
-      - "tests/**"
   workflow_dispatch:
     inputs:
       qwentts_ref:

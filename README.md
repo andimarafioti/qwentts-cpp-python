@@ -69,9 +69,9 @@ the same backend flavor. For example, the `cu128` page can host both
 `manylinux_2_35` wheels for Ubuntu 22.04+ and `manylinux_2_39` wheels for
 Ubuntu 24.04+. Pip selects the newest compatible wheel for the current machine.
 
-Relevant pull requests automatically build the CPU and CUDA validation matrix.
-The additional older-Linux variants are built when publishing the full matrix
-through the `Publish Hugging Face Wheels` workflow.
+Pull requests do not build the wheel matrix. The PyPI and Hugging Face
+publishing workflows each rebuild fresh wheels from the pinned qwentts.cpp
+revision; validation artifacts are not reused for publishing.
 
 The CI wheel build defaults to qwentts.cpp
 `7df559a8ca25f66fee02970514ebe5f01dee9055`, which retains ABI v2 and includes
