@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, Iterator, Sequence, Tuple
+from typing import Any, Callable, Iterator, Sequence, Tuple
 
 import numpy as np
 
@@ -42,6 +42,23 @@ QT_AUDIO_CHUNK_CB = ctypes.CFUNCTYPE(
     ctypes.c_void_p,
 )
 QT_LOG_CB = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p)
+
+
+class _LogCallbackState:
+    """Keep one native callback alive for each loaded library path."""
+
+    def __init__(self) -> None:
+        self.handler: Callable[[int, str], None] | None = None
+        self.native_callback = QT_LOG_CB(self._dispatch)
+
+    def _dispatch(self, level: int, message: bytes, _user_data) -> None:
+        handler = self.handler
+        if handler is not None:
+            handler(int(level), message.decode("utf-8", errors="replace") if message else "")
+
+
+_log_callback_states: dict[Path, _LogCallbackState] = {}
+_log_callback_lock = threading.RLock()
 
 
 class QtAudio(ctypes.Structure):
@@ -355,7 +372,6 @@ class QwenLibrary:
         self.path = find_library(library_path)
         self._dll_dir_handle = None
         self._dependency_handles: list[ctypes.CDLL] = []
-        self._log_callback: QT_LOG_CB | None = None
         self._has_qt_num_codebooks = False
         self._has_qt_n_speakers = False
         self._has_qt_speaker_name = False
@@ -455,19 +471,17 @@ class QwenLibrary:
         """Install a process-wide qwentts.cpp log callback.
 
         The native ABI exposes logging globally, mirroring llama.cpp-style
-        callbacks. Keep the ctypes callback alive on this loader so the C
-        function pointer remains valid.
+        callbacks. Keep its ctypes trampoline alive for the process lifetime,
+        even after the loader that installed it is released.
         """
-        if callback is None:
-            self._lib.qt_log_set(QT_LOG_CB(), None)
-            self._log_callback = None
-            return
-
-        def _callback(level: int, message: bytes, _user_data) -> None:
-            callback(int(level), message.decode("utf-8", errors="replace") if message else "")
-
-        self._log_callback = QT_LOG_CB(_callback)
-        self._lib.qt_log_set(self._log_callback, None)
+        with _log_callback_lock:
+            path = self.path.resolve()
+            state = _log_callback_states.get(path)
+            if state is None:
+                state = _LogCallbackState()
+                _log_callback_states[path] = state
+            state.handler = callback
+            self._lib.qt_log_set(state.native_callback if callback is not None else QT_LOG_CB(), None)
 
 
 class QwenTTS:

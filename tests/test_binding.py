@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import ctypes
+import gc
 import os
 import threading
+import weakref
 
 import numpy as np
 import pytest
@@ -55,6 +57,47 @@ def test_loads_library_from_env_when_available():
         pytest.skip("QWENTTS_CPP_LIBRARY not set")
     lib = QwenLibrary(path)
     assert lib.version()
+
+
+def test_log_callback_survives_loader_and_is_reused(tmp_path):
+    class FakeNativeLibrary:
+        def qt_log_set(self, callback, _user_data):
+            # Native code stores the pointer, not a Python reference.
+            self.callback_address = ctypes.cast(callback, ctypes.c_void_p).value
+            self.callback_ref = weakref.ref(callback)
+
+    native = FakeNativeLibrary()
+    path = tmp_path / "libqwen.so"
+    messages = []
+
+    def install(handler):
+        loader = QwenLibrary.__new__(QwenLibrary)
+        loader.path = path
+        loader._lib = native
+        loader.set_log_callback(handler)
+        return weakref.ref(loader)
+
+    first_loader = install(lambda level, message: messages.append((level, message)))
+    first_address = native.callback_address
+    first_callback_ref = native.callback_ref
+    gc.collect()
+
+    assert first_loader() is None
+    assert first_callback_ref() is not None
+    first_callback_ref()(1, b"first", None)
+    assert messages == [(1, "first")]
+
+    second_loader = install(lambda level, message: messages.append((level, message)))
+    gc.collect()
+
+    assert second_loader() is None
+    assert native.callback_address == first_address
+    assert native.callback_ref() is first_callback_ref()
+    native.callback_ref()(2, b"second", None)
+    assert messages == [(1, "first"), (2, "second")]
+
+    install(None)
+    assert native.callback_address is None
 
 
 def test_tts_params_contains_abi_v2_latent_tail_fields():
