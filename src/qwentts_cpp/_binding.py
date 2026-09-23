@@ -6,6 +6,7 @@ import queue
 import sys
 import threading
 import time
+import weakref
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
@@ -48,13 +49,17 @@ class _LogCallbackState:
     """Keep one native callback alive for each loaded library path."""
 
     def __init__(self) -> None:
-        self.handler: Callable[[int, str], None] | None = None
+        self.owner: weakref.ReferenceType[QwenLibrary] | None = None
         self.native_callback = QT_LOG_CB(self._dispatch)
 
     def _dispatch(self, level: int, message: bytes, _user_data) -> None:
-        handler = self.handler
+        owner = self.owner() if self.owner is not None else None
+        handler = owner._log_callback_handler if owner is not None else None
+        text = message.decode("utf-8", errors="replace") if message else ""
         if handler is not None:
-            handler(int(level), message.decode("utf-8", errors="replace") if message else "")
+            handler(int(level), text)
+        else:
+            print(text, file=sys.stderr)
 
 
 _log_callback_states: dict[Path, _LogCallbackState] = {}
@@ -372,6 +377,7 @@ class QwenLibrary:
         self.path = find_library(library_path)
         self._dll_dir_handle = None
         self._dependency_handles: list[ctypes.CDLL] = []
+        self._log_callback_handler: Callable[[int, str], None] | None = None
         self._has_qt_num_codebooks = False
         self._has_qt_n_speakers = False
         self._has_qt_speaker_name = False
@@ -472,7 +478,9 @@ class QwenLibrary:
 
         The native ABI exposes logging globally, mirroring llama.cpp-style
         callbacks. Keep its ctypes trampoline alive for the process lifetime,
-        even after the loader that installed it is released.
+        even after the loader that installed it is released. The Python handler
+        belongs to the loader and is released with it; keep the loader alive
+        while the handler should receive messages.
         """
         with _log_callback_lock:
             path = self.path.resolve()
@@ -480,7 +488,11 @@ class QwenLibrary:
             if state is None:
                 state = _LogCallbackState()
                 _log_callback_states[path] = state
-            state.handler = callback
+            previous_owner = state.owner() if state.owner is not None else None
+            if previous_owner is not None and previous_owner is not self:
+                previous_owner._log_callback_handler = None
+            self._log_callback_handler = callback
+            state.owner = weakref.ref(self) if callback is not None else None
             self._lib.qt_log_set(state.native_callback if callback is not None else QT_LOG_CB(), None)
 
 
