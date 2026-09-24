@@ -173,13 +173,15 @@ for audio, sample_rate in tts.stream(
     text="The sky is blue today.",
     ref_spk_emb=spk,             # Base model; use speaker= for CustomVoice
     first_chunk_frames=4,
-    codec_chunk_sec=0.64,       # Later packets: 8 frames, independently sized
+    codec_chunk_sec=0.64,       # Default later packets: 8 frames, independently sized
 ):
     play_audio(audio, sample_rate)  # Your playback/transport function
 ```
 
-Later packets use `codec_chunk_sec` rounded to the nearest 80 ms frame, with
-a one-frame minimum (default 1.0 second rounds to 13 frames / 1.04 seconds).
+Later packets default to `codec_chunk_sec=0.64` (8 frames), matching the native
+steady-state width without adding a larger batching delay after the first packet.
+Explicit values round to the nearest 80 ms frame, with a one-frame minimum
+(for example, 1.0 second rounds to 13 frames / 1.04 seconds).
 The value must be finite and positive. Successful end-of-speech or the token
 limit flushes any remaining audio as a short packet, including utterances
 shorter than the requested first packet. Cancellation or errors discard the
@@ -229,7 +231,7 @@ embedding (three runs per setting after warm-up, medians):
 | 4 (default) | 84.2 ms | 369.8 ms | 320 ms |
 | 8 | 85.7 ms | 826.4 ms | 640 ms |
 
-All runs used 8-frame later packets (`codec_chunk_sec=0.64`), preserved the
+All runs used the default 8-frame later packets (`codec_chunk_sec=0.64`), preserved the
 115-frame utterance, and flushed the final short tail. Four frames provide a
 middle ground on this machine; these measurements do not guarantee gap-free
 playback on other hardware. Raw native callbacks remain one frame initially;

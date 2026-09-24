@@ -88,9 +88,11 @@ def test_packet_sizes_and_audio_are_independent_of_native_ramp(first, seconds, l
     assert profile["packet_count"] == len(packets)
 
 
-def test_default_first_packet_is_four_frames():
+def test_default_packet_sequence_is_four_then_eight_frames_and_short_tail():
     packets = list(make_tts(NativeStream()).stream(text="test"))
-    assert packets[0][0].size == 4 * CODEC_FRAME_SAMPLES
+    assert [packet.size for packet, _ in packets] == [
+        frames * CODEC_FRAME_SAMPLES for frames in (4, 8, 8, 8, 8, 3)
+    ]
 
 
 @pytest.mark.parametrize("frames", [0, 1, 3, 7])

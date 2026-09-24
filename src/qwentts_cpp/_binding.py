@@ -851,7 +851,7 @@ class QwenTTS:
         subtalker_temperature: float | None = None,
         subtalker_top_k: int | None = None,
         subtalker_top_p: float | None = None,
-        codec_chunk_sec: float = 1.0,
+        codec_chunk_sec: float = 0.64,
         codec_left_context_sec: float = 2.0,
         first_chunk_frames: int = 4,
         dump_dir: str | os.PathLike[str] | None = None,
@@ -859,8 +859,9 @@ class QwenTTS:
         """Yield mono 24 kHz PCM with independent first and later packet sizes.
 
         The first packet covers 1, 2, 4 (default), or 8 codec frames (80 ms
-        each). Later packets cover codec_chunk_sec rounded to the nearest
-        frame, at least one. A short final packet flushes on successful EOS.
+        each). Later packets default to 0.64 seconds (8 frames) and cover
+        codec_chunk_sec rounded to the nearest frame, at least one.
+        A short final packet flushes on successful EOS.
         Python assembles packets from the native 1/2/4/8-frame callback ramp;
         a packet can therefore wait for a native chunk crossing its boundary.
         codec_left_context_sec is ignored by the stateful native stream.
