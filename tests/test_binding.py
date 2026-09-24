@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import ctypes
+import gc
 import os
 import threading
+import weakref
 
 import numpy as np
 import pytest
@@ -19,7 +21,7 @@ from qwentts_cpp import (
     save_speaker_embedding,
     save_voice_ref,
 )
-from qwentts_cpp._binding import QtTTSParams, QtVoiceRef
+from qwentts_cpp._binding import QtInitParams, QtTTSParams, QtVoiceRef
 
 
 def _pack_rvq_codes(codes, code_bits=11):
@@ -55,6 +57,112 @@ def test_loads_library_from_env_when_available():
         pytest.skip("QWENTTS_CPP_LIBRARY not set")
     lib = QwenLibrary(path)
     assert lib.version()
+
+
+def test_log_callback_survives_loader_and_is_reused(tmp_path, capsys):
+    class FakeNativeLibrary:
+        def qt_log_set(self, callback, _user_data):
+            # Native code stores the pointer, not a Python reference.
+            self.callback_address = ctypes.cast(callback, ctypes.c_void_p).value
+            self.callback_ref = weakref.ref(callback)
+
+    native = FakeNativeLibrary()
+    path = tmp_path / "libqwen.so"
+    messages = []
+
+    def install(handler):
+        loader = QwenLibrary.__new__(QwenLibrary)
+        loader.path = path
+        loader._lib = native
+        loader._log_callback_handler = None
+        loader.set_log_callback(handler)
+        return loader
+
+    first_loader = install(lambda level, message: messages.append((level, message)))
+    first_loader_ref = weakref.ref(first_loader)
+    first_address = native.callback_address
+    first_callback_ref = native.callback_ref
+    del first_loader
+    gc.collect()
+
+    assert first_loader_ref() is None
+    assert first_callback_ref() is not None
+    first_callback_ref()(1, b"first", None)
+    assert messages == []
+    assert capsys.readouterr().err == "first\n"
+
+    second_loader = install(lambda level, message: messages.append((level, message)))
+    second_loader_ref = weakref.ref(second_loader)
+    del second_loader
+    gc.collect()
+
+    assert second_loader_ref() is None
+    assert native.callback_address == first_address
+    assert native.callback_ref() is first_callback_ref()
+    native.callback_ref()(2, b"second", None)
+    assert messages == []
+    assert capsys.readouterr().err == "second\n"
+
+    third_loader = install(lambda level, message: messages.append((level, message)))
+    native.callback_ref()(3, b"third", None)
+    assert messages == [(3, "third")]
+
+    third_loader.set_log_callback(None)
+    assert native.callback_address is None
+
+
+def test_log_handler_does_not_keep_tts_context_alive(tmp_path):
+    class FakeNativeLibrary:
+        def __init__(self):
+            self.freed = []
+
+        def qt_log_set(self, callback, _user_data):
+            pass
+
+        def qt_free(self, ctx):
+            self.freed.append(ctx)
+
+    native = FakeNativeLibrary()
+    loader = QwenLibrary.__new__(QwenLibrary)
+    loader.path = tmp_path / "libqwen.so"
+    loader._lib = native
+    loader._log_callback_handler = None
+    tts = QwenTTS.__new__(QwenTTS)
+    tts.library = loader
+    tts._ctx = 123
+    tts_ref = weakref.ref(tts)
+    loader.set_log_callback(lambda level, message, owner=tts: None)
+    del tts, loader
+    gc.collect()
+
+    assert tts_ref() is None
+    assert native.freed == [123]
+
+
+def test_native_log_callback_survives_repeated_init_when_available():
+    path = os.environ.get("QWENTTS_CPP_LIBRARY")
+    if not path:
+        pytest.skip("QWENTTS_CPP_LIBRARY not set")
+
+    messages = []
+    first = QwenLibrary(path)
+    first.set_log_callback(lambda level, message: messages.append((level, message)))
+    params = QtInitParams()
+    first._lib.qt_init_default_params(ctypes.byref(params))
+    assert not first._lib.qt_init(ctypes.byref(params))
+    assert messages
+    first_ref = weakref.ref(first)
+    del first
+    gc.collect()
+    assert first_ref() is None
+
+    second = QwenLibrary(path)
+    assert not second._lib.qt_init(ctypes.byref(params))
+    second.set_log_callback(lambda level, message: messages.append((level, message)))
+    count = len(messages)
+    assert not second._lib.qt_init(ctypes.byref(params))
+    assert len(messages) > count
+    second.set_log_callback(None)
 
 
 def test_tts_params_contains_abi_v2_latent_tail_fields():

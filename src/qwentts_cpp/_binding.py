@@ -6,10 +6,11 @@ import queue
 import sys
 import threading
 import time
+import weakref
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
-from typing import Any, Iterator, Sequence, Tuple
+from typing import Any, Callable, Iterator, Sequence, Tuple
 
 import numpy as np
 
@@ -42,6 +43,27 @@ QT_AUDIO_CHUNK_CB = ctypes.CFUNCTYPE(
     ctypes.c_void_p,
 )
 QT_LOG_CB = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p)
+
+
+class _LogCallbackState:
+    """Keep one native callback alive for each loaded library path."""
+
+    def __init__(self) -> None:
+        self.owner: weakref.ReferenceType[QwenLibrary] | None = None
+        self.native_callback = QT_LOG_CB(self._dispatch)
+
+    def _dispatch(self, level: int, message: bytes, _user_data) -> None:
+        owner = self.owner() if self.owner is not None else None
+        handler = owner._log_callback_handler if owner is not None else None
+        text = message.decode("utf-8", errors="replace") if message else ""
+        if handler is not None:
+            handler(int(level), text)
+        else:
+            print(text, file=sys.stderr)
+
+
+_log_callback_states: dict[Path, _LogCallbackState] = {}
+_log_callback_lock = threading.RLock()
 
 
 class QtAudio(ctypes.Structure):
@@ -355,7 +377,7 @@ class QwenLibrary:
         self.path = find_library(library_path)
         self._dll_dir_handle = None
         self._dependency_handles: list[ctypes.CDLL] = []
-        self._log_callback: QT_LOG_CB | None = None
+        self._log_callback_handler: Callable[[int, str], None] | None = None
         self._has_qt_num_codebooks = False
         self._has_qt_n_speakers = False
         self._has_qt_speaker_name = False
@@ -455,19 +477,23 @@ class QwenLibrary:
         """Install a process-wide qwentts.cpp log callback.
 
         The native ABI exposes logging globally, mirroring llama.cpp-style
-        callbacks. Keep the ctypes callback alive on this loader so the C
-        function pointer remains valid.
+        callbacks. Keep its ctypes trampoline alive for the process lifetime,
+        even after the loader that installed it is released. The Python handler
+        belongs to the loader and is released with it; keep the loader alive
+        while the handler should receive messages.
         """
-        if callback is None:
-            self._lib.qt_log_set(QT_LOG_CB(), None)
-            self._log_callback = None
-            return
-
-        def _callback(level: int, message: bytes, _user_data) -> None:
-            callback(int(level), message.decode("utf-8", errors="replace") if message else "")
-
-        self._log_callback = QT_LOG_CB(_callback)
-        self._lib.qt_log_set(self._log_callback, None)
+        with _log_callback_lock:
+            path = self.path.resolve()
+            state = _log_callback_states.get(path)
+            if state is None:
+                state = _LogCallbackState()
+                _log_callback_states[path] = state
+            previous_owner = state.owner() if state.owner is not None else None
+            if previous_owner is not None and previous_owner is not self:
+                previous_owner._log_callback_handler = None
+            self._log_callback_handler = callback
+            state.owner = weakref.ref(self) if callback is not None else None
+            self._lib.qt_log_set(state.native_callback if callback is not None else QT_LOG_CB(), None)
 
 
 class QwenTTS:
