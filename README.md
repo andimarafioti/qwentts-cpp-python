@@ -45,16 +45,16 @@ variants. Use them when the PyPI CUDA 12.8 wheel does not match the runtime or
 GPU target, for example DGX Spark / GB10 with CUDA 13:
 
 ```bash
-pip install "qwentts-cpp-python==0.3.0+cpu" \
+pip install "qwentts-cpp-python==0.4.0+cpu" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cpu
 
-pip install "qwentts-cpp-python==0.3.0+cu124" \
+pip install "qwentts-cpp-python==0.4.0+cu124" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu124
 
-pip install "qwentts-cpp-python==0.3.0+cu128" \
+pip install "qwentts-cpp-python==0.4.0+cu128" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
 
-pip install "qwentts-cpp-python==0.3.0+cu130" \
+pip install "qwentts-cpp-python==0.4.0+cu130" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
 ```
 
@@ -74,12 +74,12 @@ revision; validation artifacts are not reused for publishing.
 
 ### Apple Silicon (Metal)
 
-The Hugging Face publisher builds a `+metal` wheel for **macOS 14 or newer,
-arm64 Python 3.10+**. After this change is merged and the **Publish Hugging Face
-Wheels** workflow has completed, install it with:
+The PyPI `0.4.0` release contains Linux CUDA wheels. For **macOS 14 or newer,
+arm64 Python 3.10+**, use the `+metal` wheel published to Hugging Face. After
+the **Publish Hugging Face Wheels** workflow completes, install it with:
 
 ```bash
-python -m pip install --only-binary=qwentts-cpp-python "qwentts-cpp-python==0.3.1+metal" \
+python -m pip install --only-binary=qwentts-cpp-python "qwentts-cpp-python==0.4.0+metal" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/metal
 python -c "from qwentts_cpp import QwenLibrary; print(QwenLibrary().version())"
 ```
@@ -96,7 +96,7 @@ PyPI and cannot collide with the Linux CUDA or other backend variants.
 
 Before publication, download the `hf-wheel-metal-macosx-arm64` artifact from
 the PR's **Apple Silicon Metal wheel** check, unzip it, and install its `.whl`
-with `python -m pip install /path/to/qwentts_cpp_python-0.3.1+metal-*.whl`.
+with `python -m pip install /path/to/qwentts_cpp_python-0.4.0+metal-*.whl`.
 This macOS check also runs for PRs; the Linux matrix remains dispatch-only.
 The Hugging Face publisher rebuilds and checks its own Metal wheel.
 

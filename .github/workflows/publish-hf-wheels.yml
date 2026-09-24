@@ -140,9 +140,10 @@ jobs:
 
       - name: Install build tools
         run: |
-          python -m pip install --upgrade pip auditwheel build wheel
+          python -m pip install --upgrade pip auditwheel build wheel "patchelf>=0.14.5"
+          patchelf --version
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cmake ninja-build patchelf wget ca-certificates
+          sudo apt-get install -y --no-install-recommends cmake ninja-build wget ca-certificates
 
       - name: Install CUDA toolkit
         run: |
@@ -223,9 +224,10 @@ jobs:
 
       - name: Install build tools
         run: |
-          python -m pip install --upgrade pip auditwheel build wheel
+          python -m pip install --upgrade pip auditwheel build wheel "patchelf>=0.14.5"
+          patchelf --version
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends cmake ninja-build patchelf ca-certificates
+          sudo apt-get install -y --no-install-recommends cmake ninja-build ca-certificates
 
       - name: Fetch qwentts.cpp
         run: |
