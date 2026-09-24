@@ -1,0 +1,70 @@
+name: Apple Silicon Metal wheel
+
+"on":
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      qwentts_ref:
+        description: qwentts.cpp revision (must match the binding's verified ABI)
+        type: string
+        default: 7df559a8ca25f66fee02970514ebe5f01dee9055
+  workflow_call:
+    inputs:
+      qwentts_ref:
+        type: string
+        default: 7df559a8ca25f66fee02970514ebe5f01dee9055
+
+permissions:
+  contents: read
+
+jobs:
+  metal:
+    runs-on: macos-14
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+      QWENTTS_REF: ${{ inputs.qwentts_ref || '7df559a8ca25f66fee02970514ebe5f01dee9055' }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build and test tools
+        run: python -m pip install build delocate twine pytest numpy huggingface-hub
+      - name: Fetch pinned native source
+        run: |
+          git init third_party/qwentts.cpp
+          git -C third_party/qwentts.cpp remote add origin https://github.com/ServeurpersoCom/qwentts.cpp
+          git -C third_party/qwentts.cpp fetch --depth 1 origin "$QWENTTS_REF"
+          git -C third_party/qwentts.cpp checkout --detach FETCH_HEAD
+          git -C third_party/qwentts.cpp submodule update --init --recursive --depth 1
+      - name: Build and repair Metal wheel
+        run: |
+          test "$(uname -m)" = arm64
+          python scripts/set_local_version.py metal
+          python scripts/build_native.py --backend metal --clean
+          python -m build --wheel
+          delocate-wheel --require-archs arm64 -w wheelhouse -v dist/*.whl
+          python -m twine check --strict wheelhouse/*.whl
+      - name: Check ctypes layouts against the pinned header
+        env:
+          PYTHONPATH: src
+          QWENTTS_CPP_SOURCE: third_party/qwentts.cpp
+          QWENTTS_CPP_LIBRARY: ${{ github.workspace }}/src/qwentts_cpp/lib/libqwen.dylib
+        run: python -m pytest -q tests
+      - name: Test installed wheel without the source or build tree
+        run: |
+          python -m venv "$RUNNER_TEMP/metal-wheel-test"
+          "$RUNNER_TEMP/metal-wheel-test/bin/python" -m pip install --only-binary=:all: wheelhouse/*.whl
+          mv build "$RUNNER_TEMP/native-build"
+          mv third_party "$RUNNER_TEMP/native-source"
+          mv src/qwentts_cpp/lib "$RUNNER_TEMP/package-libraries"
+          cd "$RUNNER_TEMP"
+          env -u QWENTTS_CPP_LIBRARY -u QWEN_LIBRARY_PATH -u DYLD_LIBRARY_PATH \
+            "$RUNNER_TEMP/metal-wheel-test/bin/python" -I -c \
+            "from qwentts_cpp import QwenLibrary; lib = QwenLibrary(); print(lib.path); print(lib.version())"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hf-wheel-metal-macosx-arm64
+          path: wheelhouse/*.whl

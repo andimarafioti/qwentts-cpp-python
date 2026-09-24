@@ -9,6 +9,11 @@ name: qwentts-cpp-python wheels
         default: 7df559a8ca25f66fee02970514ebe5f01dee9055
 
 jobs:
+  macos-metal:
+    uses: ./.github/workflows/metal-wheel.yml
+    with:
+      qwentts_ref: ${{ inputs.qwentts_ref || '7df559a8ca25f66fee02970514ebe5f01dee9055' }}
+
   linux-cuda:
     name: Linux ${{ matrix.arch }} CUDA ${{ matrix.cuda_version }} wheel
     runs-on: ${{ matrix.runner }}
@@ -121,8 +126,10 @@ jobs:
 
       - name: Fetch qwentts.cpp
         run: |
-          git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
-          git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
+          git init third_party/qwentts.cpp
+          git -C third_party/qwentts.cpp remote add origin https://github.com/ServeurpersoCom/qwentts.cpp
+          git -C third_party/qwentts.cpp fetch --depth 1 origin "$QWENTTS_REF"
+          git -C third_party/qwentts.cpp checkout --detach FETCH_HEAD
           git -C third_party/qwentts.cpp submodule update --init --recursive
 
       - name: Build wheel
@@ -184,8 +191,10 @@ jobs:
 
       - name: Fetch qwentts.cpp
         run: |
-          git clone --recursive https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
-          git -C third_party/qwentts.cpp checkout "$QWENTTS_REF"
+          git init third_party/qwentts.cpp
+          git -C third_party/qwentts.cpp remote add origin https://github.com/ServeurpersoCom/qwentts.cpp
+          git -C third_party/qwentts.cpp fetch --depth 1 origin "$QWENTTS_REF"
+          git -C third_party/qwentts.cpp checkout --detach FETCH_HEAD
           git -C third_party/qwentts.cpp submodule update --init --recursive
 
       - name: Build wheel

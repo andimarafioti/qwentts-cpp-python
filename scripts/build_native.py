@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import os
 import shutil
 import shlex
@@ -17,6 +18,33 @@ def run(cmd: list[str], cwd: Path | None = None) -> None:
 
 def split_env_args(value: str | None) -> list[str]:
     return shlex.split(value or "")
+
+
+@contextmanager
+def metal_shader_compatibility(source: Path, enabled: bool):
+    """Work around the pinned ggml's invalid float -> bfloat4 fill cast.
+
+    TC is float for scalar kernels and float4 for vector kernels. Broadcast
+    through TC before converting to T, as the other unary operations do.
+    Restore the checkout afterwards; only the embedded shader needs this fix.
+    """
+    if not enabled:
+        yield
+        return
+    shader = source / "ggml/src/ggml-metal/ggml-metal.metal"
+    original = shader.read_text()
+    old = "dst_ptr[i0] = (T) args.val;"
+    new = "dst_ptr[i0] = (T) ((TC) args.val);"
+    if new in original:
+        yield
+        return
+    if original.count(old) != 1:
+        raise SystemExit("Metal fill shader changed; review the BF16 compatibility fix for this native revision")
+    try:
+        shader.write_text(original.replace(old, new))
+        yield
+    finally:
+        shader.write_text(original)
 
 
 def find_first(root: Path, patterns: list[str]) -> Path | None:
@@ -38,6 +66,28 @@ def strip_shared_library(path: Path) -> None:
         run([strip, "--strip-unneeded", str(path)])
     except subprocess.CalledProcessError:
         pass
+
+
+def relocate_macos_libraries(copied: list[Path], build_dir: Path) -> None:
+    # ggml uses versioned install names, while the package exposes unversioned
+    # filenames. Resolve every alias before replacing the Mach-O load commands.
+    destinations = {}
+    for path in build_dir.rglob("*.dylib"):
+        for dest in copied:
+            original = find_first(build_dir, [dest.name])
+            if original and path.resolve() == original.resolve():
+                destinations[path.name] = dest.name
+    for path in copied:
+        dependencies = subprocess.check_output(["otool", "-L", str(path)], text=True)
+        run(["install_name_tool", "-id", f"@rpath/{path.name}", str(path)])
+        for line in dependencies.splitlines()[2:]:
+            dependency = line.strip().split(" (", 1)[0]
+            dest_name = destinations.get(Path(dependency).name)
+            if dest_name:
+                run(["install_name_tool", "-change", dependency,
+                     f"@loader_path/{dest_name}", str(path)])
+        # Changing load commands invalidates arm64's ad-hoc signature.
+        run(["codesign", "--force", "--sign", "-", str(path)])
 
 
 def copy_shared_libraries(build_dir: Path, package_lib_dir: Path) -> None:
@@ -63,6 +113,8 @@ def copy_shared_libraries(build_dir: Path, package_lib_dir: Path) -> None:
             ("libqwen.dylib", ["libqwen.dylib"]),
             ("libggml-base.dylib", ["libggml-base.dylib"]),
             ("libggml-cpu.dylib", ["libggml-cpu.dylib"]),
+            ("libggml-metal.dylib", ["libggml-metal.dylib"]),
+            ("libggml-blas.dylib", ["libggml-blas.dylib"]),
             ("libggml-cuda.dylib", ["libggml-cuda.dylib"]),
             ("libggml-vulkan.dylib", ["libggml-vulkan.dylib"]),
             ("libggml-sycl.dylib", ["libggml-sycl.dylib"]),
@@ -98,6 +150,9 @@ def copy_shared_libraries(build_dir: Path, package_lib_dir: Path) -> None:
     if not any(p.name.startswith(("libqwen", "qwen")) for p in copied):
         raise SystemExit(f"No qwentts shared library found in {build_dir}")
 
+    if sys.platform == "darwin":
+        relocate_macos_libraries(copied, build_dir)
+
     patchelf = shutil.which("patchelf")
     if patchelf and sys.platform.startswith("linux"):
         for path in copied:
@@ -122,8 +177,8 @@ def main() -> int:
     parser.add_argument("--build-dir", default=os.environ.get("QWENTTS_CPP_BUILD_DIR", "build/qwentts-cpp"))
     parser.add_argument(
         "--backend",
-        choices=["cpu", "cuda", "vulkan", "sycl"],
-        default=os.environ.get("QWENTTS_CPP_BACKEND", "cuda"),
+        choices=["cpu", "cuda", "metal", "vulkan", "sycl"],
+        default=os.environ.get("QWENTTS_CPP_BACKEND", "metal" if sys.platform == "darwin" else "cuda"),
     )
     parser.add_argument("--cuda-compiler", default=os.environ.get("CMAKE_CUDA_COMPILER", "/usr/local/cuda/bin/nvcc"))
     parser.add_argument("--cmake-arg", action="append", default=[], help="Extra CMake configure argument; repeatable")
@@ -132,6 +187,8 @@ def main() -> int:
     parser.add_argument("--skip-build", action="store_true", help="Only copy shared libraries from --build-dir")
     parser.add_argument("--clean", action="store_true")
     args = parser.parse_args()
+    if args.backend == "metal" and sys.platform != "darwin":
+        parser.error("The Metal backend requires macOS")
 
     root = Path(__file__).resolve().parents[1]
     source = Path(args.source).resolve()
@@ -158,12 +215,21 @@ def main() -> int:
             "-DQWEN_SHARED=ON",
             "-DCMAKE_BUILD_TYPE=Release",
             "-DCMAKE_BUILD_RPATH_USE_ORIGIN=ON",
-            "-DCMAKE_INSTALL_RPATH=$ORIGIN",
+            f"-DCMAKE_INSTALL_RPATH={'@loader_path' if sys.platform == 'darwin' else '$ORIGIN'}",
         ]
         if args.backend == "cpu":
-            cmake_args.append("-DGGML_BLAS=OFF")
+            cmake_args.extend(["-DGGML_BLAS=OFF", "-DGGML_METAL=OFF"])
         elif args.backend == "cuda":
             cmake_args.extend(["-DGGML_CUDA=ON", f"-DCMAKE_CUDA_COMPILER={args.cuda_compiler}"])
+        elif args.backend == "metal":
+            cmake_args.extend([
+                "-DGGML_METAL=ON", "-DGGML_METAL_EMBED_LIBRARY=ON",
+                "-DGGML_BLAS=ON", "-DGGML_BLAS_VENDOR=Apple",
+                "-DGGML_CUDA=OFF", "-DGGML_OPENMP=OFF", "-DGGML_NATIVE=OFF",
+                "-DCMAKE_OSX_ARCHITECTURES=arm64",
+                "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON",
+                "-DCMAKE_OSX_DEPLOYMENT_TARGET=" + os.environ.get("MACOSX_DEPLOYMENT_TARGET", "14.0"),
+            ])
         elif args.backend == "vulkan":
             cmake_args.append("-DGGML_VULKAN=ON")
         elif args.backend == "sycl":
@@ -171,8 +237,9 @@ def main() -> int:
         cmake_args.extend(split_env_args(os.environ.get("QWENTTS_CPP_CMAKE_ARGS")))
         cmake_args.extend(args.cmake_arg)
 
-        run(cmake_args)
-        run(["cmake", "--build", str(build_dir), "--target", args.target, "-j", str(args.jobs)])
+        with metal_shader_compatibility(source, args.backend == "metal"):
+            run(cmake_args)
+            run(["cmake", "--build", str(build_dir), "--target", args.target, "-j", str(args.jobs)])
     copy_shared_libraries(build_dir, package_lib_dir)
     return 0
 

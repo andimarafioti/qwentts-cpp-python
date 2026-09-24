@@ -33,10 +33,16 @@ where = ["src"]
 qwentts_cpp = ["py.typed", "lib/*"]
 
 [tool.cibuildwheel]
-build = "cp310-manylinux_*"
+build = "cp310-manylinux_* cp310-macosx_arm64"
 skip = "*-musllinux_* *-manylinux_i686"
 before-build = "python scripts/build_native.py --backend cuda --clean"
 test-command = "python -c \"from qwentts_cpp import QwenLibrary; print(QwenLibrary().version())\""
 
 [tool.cibuildwheel.linux]
 repair-wheel-command = "auditwheel repair -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.macos]
+archs = ["arm64"]
+environment = { MACOSX_DEPLOYMENT_TARGET = "14.0" }
+before-build = "python scripts/build_native.py --backend metal --clean"
+repair-wheel-command = "delocate-wheel --require-archs arm64 -w {dest_dir} -v {wheel}"
