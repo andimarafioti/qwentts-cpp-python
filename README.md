@@ -125,7 +125,7 @@ python -m pip install build delocate twine
 export MACOSX_DEPLOYMENT_TARGET=14.0
 python scripts/set_local_version.py metal  # changes local version metadata
 python scripts/build_native.py --backend metal --clean
-python -m build --wheel
+python -m build --wheel --config-setting=--build-option=--plat-name=macosx_14_0_arm64
 delocate-wheel --require-archs arm64 -w wheelhouse -v dist/*.whl
 python -m twine check --strict wheelhouse/*.whl
 ```

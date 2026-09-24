@@ -44,7 +44,8 @@ jobs:
           test "$(uname -m)" = arm64
           python scripts/set_local_version.py metal
           python scripts/build_native.py --backend metal --clean
-          python -m build --wheel
+          # setup-python may provide universal2 Python; the bundled dylibs are arm64 only.
+          python -m build --wheel --config-setting=--build-option=--plat-name=macosx_14_0_arm64
           delocate-wheel --require-archs arm64 -w wheelhouse -v dist/*.whl
           python -m twine check --strict wheelhouse/*.whl
       - name: Check ctypes layouts against the pinned header
