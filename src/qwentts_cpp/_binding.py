@@ -15,6 +15,9 @@ from typing import Any, Callable, Iterator, Sequence, Tuple
 import numpy as np
 
 QT_ABI_VERSION = 2
+# Upstream has no ABI/sizeof query. Check identity before any native function
+# writes a parameter struct; probing default_params itself is not memory-safe.
+QWENTTS_NATIVE_REVISION = "7df559a8ca25f66fee02970514ebe5f01dee9055"
 RVQ_CODE_BITS = 11
 
 
@@ -384,7 +387,27 @@ class QwenLibrary:
         self._has_qt_extract_voice_ref = False
         self._has_qt_voice_ref_free = False
         self._lib = self._load_cdll(self.path)
-        self._bind()
+        try:
+            self._validate_native_revision()
+            self._bind()
+        except AttributeError as exc:
+            raise QwenTTSError(
+                f"Incompatible qwentts.cpp library at {self.path}: missing required C ABI symbol ({exc}). "
+                "Install a matching qwentts-cpp-python wheel."
+            ) from exc
+
+    def _validate_native_revision(self) -> None:
+        self._lib.qt_version.argtypes = []
+        self._lib.qt_version.restype = ctypes.c_char_p
+        raw_version = self._lib.qt_version()
+        version = raw_version.decode("utf-8", errors="replace") if raw_version else "unknown"
+        revision = version.split(" ", 1)[0]
+        if not (7 <= len(revision) <= 40 and QWENTTS_NATIVE_REVISION.startswith(revision)):
+            raise QwenTTSError(
+                f"Unverified qwentts.cpp ABI at {self.path}: native version {version!r}; "
+                f"this binding requires revision {QWENTTS_NATIVE_REVISION} (ABI v{QT_ABI_VERSION}). "
+                "Install a matching wheel or rebuild that revision. Upstream provides no safe ABI query."
+            )
 
     def _load_cdll(self, path: Path) -> ctypes.CDLL:
         mode = getattr(ctypes, "RTLD_GLOBAL", 0)

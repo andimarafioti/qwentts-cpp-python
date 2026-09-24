@@ -23,10 +23,16 @@ wheels from the pinned qwentts.cpp source.
 Additional backend-specific wheels can be published to Hugging Face Hub by
 manually dispatching `.github/workflows/publish-hf-wheels.yml`. That workflow
 builds local-version variants such as `0.2.0+cpu`, `0.2.0+cu124`,
-`0.2.0+cu128`, and `0.2.0+cu130`, prepares static `--find-links` pages,
+`0.2.0+cu128`, `0.2.0+cu130`, and `0.3.1+metal`, prepares static `--find-links` pages,
 creates the public dataset repo if needed, and uploads the wheel index using
 the `HF_TOKEN` repository secret. Do not upload those local-version variants to
 PyPI.
+
+The `+metal` flavor is a macOS 14+ arm64 wheel with embedded Metal shaders and
+bundled native dylibs. The reusable `.github/workflows/metal-wheel.yml` builds,
+repairs, validates ABI layouts, and tests a clean wheel install. It runs for PRs
+and is also called by validation and Hugging Face publishing. GPU synthesis is
+tested locally with `scripts/smoke_stream.py --require-metal` and local weights.
 
 Pull requests do not run the Linux wheel matrix. Do not run the validation
 workflow solely as a publishing prerequisite, because the publishing workflows
@@ -38,8 +44,10 @@ To rebuild against a newer qwentts.cpp revision:
 
 1. Resolve the latest upstream `master` commit to its full SHA.
 2. Update every default and event fallback for `QWENTTS_REF` in
-   `.github/workflows/wheels.yml`, `.github/workflows/publish.yml`, and
-   `.github/workflows/publish-hf-wheels.yml`.
+   `.github/workflows/wheels.yml`, `.github/workflows/publish.yml`,
+   `.github/workflows/publish-hf-wheels.yml`, and `.github/workflows/metal-wheel.yml`.
+   Update `QWENTTS_NATIVE_REVISION` in `src/qwentts_cpp/_binding.py` and verify
+   ctypes layouts with `QWENTTS_CPP_SOURCE=/path/to/source python -m pytest tests/test_native_abi.py`.
 3. Update the pinned revision and its summary in `README.md`.
 4. Open a focused pull request containing the pin and documentation changes.
 5. After merging, use the normal publishing paths when a release is intended:

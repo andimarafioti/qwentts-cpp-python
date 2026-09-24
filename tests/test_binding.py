@@ -13,6 +13,7 @@ from qwentts_cpp import (
     LibraryNotFoundError,
     QwenLibrary,
     QwenTTS,
+    QwenTTSError,
     VoiceRef,
     load_rvq_codes,
     load_speaker_embedding,
@@ -22,6 +23,42 @@ from qwentts_cpp import (
     save_voice_ref,
 )
 from qwentts_cpp._binding import QtInitParams, QtTTSParams, QtVoiceRef
+
+
+@pytest.mark.parametrize("version", [b"unknown", b"abcdef0 (2026-01-01)", b"", None, b"7df"])
+def test_unverified_library_rejected_before_binding(monkeypatch, tmp_path, version):
+    from unittest.mock import Mock
+
+    path = tmp_path / "libqwen.dylib"
+    path.touch()
+    native = Mock()
+    native.qt_version.return_value = version
+    monkeypatch.setattr(QwenLibrary, "_load_cdll", lambda self, path: native)
+    bind = Mock()
+    monkeypatch.setattr(QwenLibrary, "_bind", bind)
+    with pytest.raises(QwenTTSError, match="Unverified qwentts.cpp ABI"):
+        QwenLibrary(path)
+    bind.assert_not_called()
+    native.qt_init_default_params.assert_not_called()
+    native.qt_tts_default_params.assert_not_called()
+
+
+def test_missing_native_symbol_reports_incompatible_library(monkeypatch, tmp_path):
+    path = tmp_path / "libqwen.dylib"
+    path.touch()
+    monkeypatch.setattr(QwenLibrary, "_load_cdll", lambda self, path: object())
+    with pytest.raises(QwenTTSError, match="missing required C ABI symbol"):
+        QwenLibrary(path)
+
+
+@pytest.mark.parametrize("revision", ["7df559a", "7df559a8", "7df559a8ca25f66fee02970514ebe5f01dee9055"])
+def test_verified_native_revision_is_accepted(revision):
+    from unittest.mock import Mock
+
+    library = QwenLibrary.__new__(QwenLibrary)
+    library._lib = Mock()
+    library._lib.qt_version.return_value = f"{revision} (2026-05-01)".encode()
+    library._validate_native_revision()
 
 
 def _pack_rvq_codes(codes, code_bits=11):
