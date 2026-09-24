@@ -161,6 +161,82 @@ PY
 Model files are resolved with `huggingface-hub` by `QwenTTS.from_pretrained(...)`
 or passed directly to `QwenTTS(...)` as GGUF paths.
 
+## Streaming packet sizes
+
+`QwenTTS.stream()` defaults to a **4-frame first packet** (320 ms of mono
+24 kHz audio). Choose `first_chunk_frames=1`, `2`, `4`, or `8` for 80, 160,
+320, or 640 ms of initial audio. A larger packet gives playback more audio
+to start with, at the cost of waiting longer before the first yield.
+
+```python
+for audio, sample_rate in tts.stream(
+    text="The sky is blue today.",
+    ref_spk_emb=spk,             # Base model; use speaker= for CustomVoice
+    first_chunk_frames=4,
+    codec_chunk_sec=0.64,       # Default later packets: 8 frames, independently sized
+):
+    play_audio(audio, sample_rate)  # Your playback/transport function
+```
+
+Later packets default to `codec_chunk_sec=0.64` (8 frames), matching the native
+steady-state width without adding a larger batching delay after the first packet.
+Explicit values round to the nearest 80 ms frame, with a one-frame minimum
+(for example, 1.0 second rounds to 13 frames / 1.04 seconds).
+The value must be finite and positive. Successful end-of-speech or the token
+limit flushes any remaining audio as a short packet, including utterances
+shorter than the requested first packet. Cancellation or errors discard the
+unfinished packet; closing the iterator requests native cancellation.
+
+Packet assembly happens in Python, using the existing verified ABI v2 library.
+The native decoder still emits its fixed 1→2→4→8-frame ramp, then 8-frame
+chunks. Consequently, first packets of 1, 2, 4, and 8 frames become available
+after native output has reached 1, 3, 7, and 15 frames respectively (or earlier
+at end-of-speech). Packet boundaries preserve every PCM sample but do not
+change native decode scheduling. Later packets may become available together
+when a native callback spans several packet boundaries; this is not a timed
+playback scheduler. `codec_left_context_sec` is ignored by the stateful native
+stream. Buffered `synthesize()` retains its native codec chunking behavior.
+
+`last_stream_profile` keeps `first_callback_*` and `callback_count` for raw
+native callbacks. `first_packet_ready_ms`, `first_packet_audio_s`, and
+`packet_count` describe the assembled Python packets; `first_yield_ms` measures
+delivery to the caller. This distinction includes the buffering cost in latency
+measurements instead of treating the first native callback as audible output.
+
+Benchmark 1, 4, and 8 frames on local hardware (one warm-up, then three measured
+runs per setting, with rotated order):
+
+```bash
+python scripts/benchmark_first_chunk.py \
+  --talker /path/to/qwen-talker-1.7b-base-Q8_0.gguf \
+  --codec /path/to/qwen-tokenizer-12hz-Q8_0.gguf \
+  --ref-spk /path/to/reference.spk \
+  --require-metal --output /tmp/first-chunk-benchmark.json
+```
+
+For other model types, use `--speaker` or `--instruct` instead of `--ref-spk`.
+Omit `--require-metal` on other backends. The report includes native first
+callback time, first Python packet time/duration, and every packet's size.
+The benchmark checks first/later packet sizes, finite non-silent audio, and the
+final tail. Playback smoothness still depends on synthesis speed and the
+player's buffering policy.
+
+Example measurement on an Apple M3 Pro with Metal, macOS 26.6.2, Python
+3.12.13, the Q8_0 1.7B Base talker and Q8_0 codec above, and a cached speaker
+embedding (three runs per setting after warm-up, medians):
+
+| First frames | Native first callback | First Python packet ready | First packet audio |
+| --- | --- | --- | --- |
+| 1 | 94.4 ms | 94.5 ms | 80 ms |
+| 4 (default) | 84.2 ms | 369.8 ms | 320 ms |
+| 8 | 85.7 ms | 826.4 ms | 640 ms |
+
+All runs used the default 8-frame later packets (`codec_chunk_sec=0.64`), preserved the
+115-frame utterance, and flushed the final short tail. Four frames provide a
+middle ground on this machine; these measurements do not guarantee gap-free
+playback on other hardware. Raw native callbacks remain one frame initially;
+the larger first packet is assembled by the binding.
+
 ## Cached voice references
 
 qwentts.cpp ABI v2 can skip reference WAV encoding for Base voice cloning by

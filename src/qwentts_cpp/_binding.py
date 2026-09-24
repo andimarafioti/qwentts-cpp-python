@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ctypes
+import math
+import numbers
 import os
 import queue
 import sys
@@ -19,6 +21,34 @@ QT_ABI_VERSION = 2
 # writes a parameter struct; probing default_params itself is not memory-safe.
 QWENTTS_NATIVE_REVISION = "7df559a8ca25f66fee02970514ebe5f01dee9055"
 RVQ_CODE_BITS = 11
+CODEC_FRAME_SAMPLES = 1920  # Fixed 12.5 Hz codec at 24 kHz.
+
+
+class _StreamPackets:
+    """Reframe owned native PCM without changing the native codec state."""
+
+    def __init__(self, first_frames: int, later_frames: int):
+        self.target = first_frames * CODEC_FRAME_SAMPLES
+        self.later_target = later_frames * CODEC_FRAME_SAMPLES
+        self.parts: list[np.ndarray] = []
+        self.size = 0
+
+    def push(self, chunk: np.ndarray) -> Iterator[np.ndarray]:
+        offset = 0
+        while offset < chunk.size:
+            take = min(self.target - self.size, chunk.size - offset)
+            self.parts.append(chunk[offset:offset + take])
+            self.size += take
+            offset += take
+            if self.size == self.target:
+                yield self.flush()
+                self.target = self.later_target
+
+    def flush(self) -> np.ndarray:
+        packet = self.parts[0] if len(self.parts) == 1 else np.concatenate(self.parts)
+        self.parts = []
+        self.size = 0
+        return packet
 
 
 class QwenStatus(IntEnum):
@@ -821,12 +851,34 @@ class QwenTTS:
         subtalker_temperature: float | None = None,
         subtalker_top_k: int | None = None,
         subtalker_top_p: float | None = None,
-        codec_chunk_sec: float = 1.0,
+        codec_chunk_sec: float = 0.64,
         codec_left_context_sec: float = 2.0,
+        first_chunk_frames: int = 4,
         dump_dir: str | os.PathLike[str] | None = None,
     ) -> Iterator[Tuple[np.ndarray, int]]:
+        """Yield mono 24 kHz PCM with independent first and later packet sizes.
+
+        The first packet covers 1, 2, 4 (default), or 8 codec frames (80 ms
+        each). Later packets default to 0.64 seconds (8 frames) and cover
+        codec_chunk_sec rounded to the nearest frame, at least one.
+        A short final packet flushes on successful EOS.
+        Python assembles packets from the native 1/2/4/8-frame callback ramp;
+        a packet can therefore wait for a native chunk crossing its boundary.
+        codec_left_context_sec is ignored by the stateful native stream.
+        """
+        if (isinstance(first_chunk_frames, bool)
+                or not isinstance(first_chunk_frames, numbers.Integral)
+                or first_chunk_frames not in (1, 2, 4, 8)):
+            raise ValueError("first_chunk_frames must be one of 1, 2, 4, or 8")
+        if not math.isfinite(codec_chunk_sec) or codec_chunk_sec <= 0:
+            raise ValueError("codec_chunk_sec must be finite and positive")
+        later_frames = max(1, int(codec_chunk_sec * 12.5 + 0.5))
+        packets = _StreamPackets(int(first_chunk_frames), later_frames)
         profile: dict[str, Any] = {
             "mode": "stream",
+            "first_chunk_frames": int(first_chunk_frames),
+            "packet_frames": later_frames,
+            "packet_count": 0,
             "codec_chunk_sec": float(codec_chunk_sec),
             "codec_left_context_sec": float(codec_left_context_sec),
             "callback_count": 0,
@@ -846,6 +898,14 @@ class QwenTTS:
         def cancel_cb(_user_data) -> bool:
             return cancel_event.is_set()
 
+        def emit_packet(packet: np.ndarray) -> None:
+            if profile["packet_count"] == 0:
+                profile["first_packet_ready_ms"] = elapsed_ms()
+                profile["first_packet_n_samples"] = int(packet.size)
+                profile["first_packet_audio_s"] = float(packet.size) / 24000.0
+            profile["packet_count"] += 1
+            chunks.put((packet, 24000))
+
         def on_chunk(samples, n_samples, _user_data) -> bool:
             if cancel_event.is_set():
                 return False
@@ -863,7 +923,10 @@ class QwenTTS:
             if is_first:
                 profile["first_callback_copy_ms"] = copy_ms
             queue_start = time.perf_counter()
-            chunks.put((chunk.astype(np.float32, copy=False), 24000))
+            for packet in packets.push(chunk):
+                if cancel_event.is_set():
+                    return False
+                emit_packet(packet)
             queue_ms = (time.perf_counter() - queue_start) * 1000
             profile["callback_queue_ms_total"] += queue_ms
             if is_first:
@@ -921,6 +984,8 @@ class QwenTTS:
                 profile["native_return_ms"] = elapsed_ms()
                 if rc != QwenStatus.OK and not cancel_event.is_set():
                     chunks.put(QwenTTSError(self.library.last_error() or f"qt_synthesize failed with status {rc}"))
+                elif rc == QwenStatus.OK and not cancel_event.is_set() and packets.size:
+                    emit_packet(packets.flush())
             except BaseException as exc:
                 if not cancel_event.is_set():
                     chunks.put(exc)
