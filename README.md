@@ -171,6 +171,38 @@ PY
 Model files are resolved with `huggingface-hub` by `QwenTTS.from_pretrained(...)`
 or passed directly to `QwenTTS(...)` as GGUF paths.
 
+## Native logging in Python applications
+
+Pass `log_level="warning"` when creating a context to hide routine qwentts.cpp
+and GGML/Metal messages from model loading and synthesis while keeping warnings
+and errors on stderr. `"quiet"` is an alias for `"warning"`; `"info"` and
+`"debug"` expose diagnostics, and `"error"` shows errors only.
+
+```python
+from qwentts_cpp import QwenTTS
+
+with QwenTTS.from_pretrained(
+    "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+    quant="Q4_K_M",
+    log_level="warning",
+) as tts:
+    audio, sample_rate = tts.synthesize(
+        text="The sky is blue today.", speaker="Vivian"
+    )
+```
+
+The same `log_level` argument works with `QwenTTS(talker_path, codec_path)` and
+`QwenLibrary(...)`. Call `set_log_level("debug")` on either object to expose all
+diagnostics later. Configure the level before creating a `QwenTTS` to cover
+model initialization. The level and both native callbacks are process-wide:
+the most recent setting applies to all contexts, persists after a context
+closes, and should be changed only when no other thread is running native
+inference. This setting does not redirect the process stderr file descriptor.
+Existing `set_log_callback()` receives filtered qwentts.cpp messages; GGML
+messages use stderr. The package's wheel builds retain an application-installed
+GGML callback during first backend initialization; custom native builds must
+use `scripts/build_native.py` for the same behavior.
+
 ## Streaming packet sizes
 
 `QwenTTS.stream()` defaults to a **4-frame first packet** (320 ms of mono
