@@ -8,11 +8,13 @@
 
 PyPI publishing is handled by GitHub Actions in `.github/workflows/publish.yml`.
 The workflow runs on pushed tags that match `v*`, builds the public Linux CUDA
-12.8 wheels, checks the artifacts with `twine check --strict`, and publishes
+12.8 and macOS Metal wheels, checks the artifacts with `twine check --strict`, and publishes
 through the configured `pypi` environment.
 
-The public `qwentts-cpp-python` package currently publishes CUDA 12.8 wheels
-only. Publishing multiple backend flavors under the same package name, version,
+The public `qwentts-cpp-python` package publishes CUDA 12.8 wheels for Linux
+and Metal wheels for macOS 14+ arm64, using plain public versions for both.
+Their platform tags let pip select the appropriate wheel automatically.
+Publishing multiple backend flavors under the same package name, version,
 and platform tag would leave pip with no reliable way to choose the intended
 runtime.
 
@@ -31,7 +33,8 @@ PyPI.
 The `+metal` flavor is a macOS 14+ arm64 wheel with embedded Metal shaders and
 bundled native dylibs. The reusable `.github/workflows/metal-wheel.yml` builds,
 repairs, validates ABI layouts, and tests a clean wheel install. It runs for PRs
-and is also called by validation and Hugging Face publishing. GPU synthesis is
+and is also called by validation, PyPI publishing (with `pypi: true` to omit
+the local version suffix), and Hugging Face publishing. GPU synthesis is
 tested locally with `scripts/smoke_stream.py --require-metal` and local weights.
 
 Pull requests do not run the Linux wheel matrix. Do not run the validation
