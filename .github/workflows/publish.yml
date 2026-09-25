@@ -15,6 +15,12 @@ permissions:
   contents: read
 
 jobs:
+  build-metal-wheel:
+    uses: ./.github/workflows/metal-wheel.yml
+    with:
+      pypi: true
+      qwentts_ref: ${{ inputs.qwentts_ref || '7df559a8ca25f66fee02970514ebe5f01dee9055' }}
+
   build-wheels:
     name: Linux ${{ matrix.arch }} CUDA 12.8 wheel
     runs-on: ${{ matrix.runner }}
@@ -110,7 +116,7 @@ jobs:
 
   check:
     name: Check distributions
-    needs: build-wheels
+    needs: [build-wheels, build-metal-wheel]
     runs-on: ubuntu-latest
     steps:
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0

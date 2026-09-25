@@ -10,6 +10,10 @@ name: Apple Silicon Metal wheel
         default: 7df559a8ca25f66fee02970514ebe5f01dee9055
   workflow_call:
     inputs:
+      pypi:
+        description: Build a public version for PyPI instead of a Hugging Face local version
+        type: boolean
+        default: false
       qwentts_ref:
         type: string
         default: 7df559a8ca25f66fee02970514ebe5f01dee9055
@@ -39,10 +43,12 @@ jobs:
           git -C third_party/qwentts.cpp fetch --depth 1 origin "$QWENTTS_REF"
           git -C third_party/qwentts.cpp checkout --detach FETCH_HEAD
           git -C third_party/qwentts.cpp submodule update --init --recursive --depth 1
+      - name: Set Hugging Face local version
+        if: ${{ !inputs.pypi }}
+        run: python scripts/set_local_version.py metal
       - name: Build and repair Metal wheel
         run: |
           test "$(uname -m)" = arm64
-          python scripts/set_local_version.py metal
           python scripts/build_native.py --backend metal --clean
           # setup-python may provide universal2 Python; the bundled dylibs are arm64 only.
           python -m build --wheel --config-setting=--build-option=--plat-name=macosx_14_0_arm64
@@ -67,5 +73,5 @@ jobs:
             "from qwentts_cpp import QwenLibrary; lib = QwenLibrary(); print(lib.path); print(lib.version())"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: hf-wheel-metal-macosx-arm64
+          name: ${{ inputs.pypi && 'wheel-metal-macosx-arm64' || 'hf-wheel-metal-macosx-arm64' }}
           path: wheelhouse/*.whl
