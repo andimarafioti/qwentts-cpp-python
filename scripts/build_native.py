@@ -119,7 +119,7 @@ def native_diagnostic_compatibility(source: Path):
                     level = "QT_LOG_WARN"
                 elif any(word in message for word in (
                     "fatal", "failed", "cannot", "oom", "unsupported",
-                    "not a valid", "no audio data", "unknown format",
+                    "not a valid", "not found", "no audio data", "unknown format",
                 )):
                     level = "QT_LOG_ERROR"
                 else:
