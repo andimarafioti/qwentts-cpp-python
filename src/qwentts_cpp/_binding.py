@@ -76,6 +76,19 @@ QT_AUDIO_CHUNK_CB = ctypes.CFUNCTYPE(
     ctypes.c_void_p,
 )
 QT_LOG_CB = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p)
+GGML_LOG_CB = ctypes.CFUNCTYPE(None, ctypes.c_int, ctypes.c_char_p, ctypes.c_void_p)
+
+_LOG_LEVELS = {"debug": 0, "info": 1, "warning": 2, "error": 3}
+_LOG_ALIASES = {"quiet": "warning", "warn": "warning", "verbose": "debug"}
+
+
+def _normalize_log_level(level: str) -> str:
+    if not isinstance(level, str):
+        raise ValueError("log_level must be debug, info, warning, or error")
+    normalized = _LOG_ALIASES.get(level.lower(), level.lower())
+    if normalized not in _LOG_LEVELS:
+        raise ValueError("log_level must be debug, info, warning, or error")
+    return normalized
 
 
 class _LogCallbackState:
@@ -83,16 +96,32 @@ class _LogCallbackState:
 
     def __init__(self) -> None:
         self.owner: weakref.ReferenceType[QwenLibrary] | None = None
+        self.level: str | None = None
+        self.last_ggml_level = 2
         self.native_callback = QT_LOG_CB(self._dispatch)
+        self.ggml_callback = GGML_LOG_CB(self._dispatch_ggml)
 
     def _dispatch(self, level: int, message: bytes, _user_data) -> None:
         owner = self.owner() if self.owner is not None else None
         handler = owner._log_callback_handler if owner is not None else None
+        if self.level is not None and int(level) < _LOG_LEVELS[self.level]:
+            return
         text = message.decode("utf-8", errors="replace") if message else ""
         if handler is not None:
             handler(int(level), text)
         else:
             print(text, file=sys.stderr)
+
+    def _dispatch_ggml(self, level: int, message: bytes, _user_data) -> None:
+        # GGML_CONT extends the previous message and has no severity of its own.
+        if level == 5:
+            level = self.last_ggml_level
+        else:
+            self.last_ggml_level = int(level)
+        if self.level is not None and level < _LOG_LEVELS[self.level] + 1:
+            return
+        if message:
+            sys.stderr.write(message.decode("utf-8", errors="replace"))
 
 
 _log_callback_states: dict[Path, _LogCallbackState] = {}
@@ -406,7 +435,9 @@ def find_library(explicit_path: str | os.PathLike[str] | None = None) -> Path:
 class QwenLibrary:
     """Thin loader for the `qwentts.cpp` C ABI."""
 
-    def __init__(self, library_path: str | os.PathLike[str] | None = None):
+    def __init__(self, library_path: str | os.PathLike[str] | None = None, *, log_level: str | None = None):
+        if log_level is not None:
+            log_level = _normalize_log_level(log_level)
         self.path = find_library(library_path)
         self._dll_dir_handle = None
         self._dependency_handles: list[ctypes.CDLL] = []
@@ -420,6 +451,8 @@ class QwenLibrary:
         try:
             self._validate_native_revision()
             self._bind()
+            if log_level is not None:
+                self.set_log_level(log_level)
         except AttributeError as exc:
             raise QwenTTSError(
                 f"Incompatible qwentts.cpp library at {self.path}: missing required C ABI symbol ({exc}). "
@@ -546,7 +579,32 @@ class QwenLibrary:
                 previous_owner._log_callback_handler = None
             self._log_callback_handler = callback
             state.owner = weakref.ref(self) if callback is not None else None
-            self._lib.qt_log_set(state.native_callback if callback is not None else QT_LOG_CB(), None)
+            active = callback is not None or state.level is not None
+            self._lib.qt_log_set(state.native_callback if active else QT_LOG_CB(), None)
+
+    def set_log_level(self, level: str) -> None:
+        """Filter qwentts.cpp and GGML logs process-wide, including model initialization.
+
+        The most recent configuration wins. Native callbacks stay alive for the
+        process lifetime; this method does not redirect the stderr descriptor.
+        """
+        normalized = _normalize_log_level(level)
+        ggml = next((dep for dep in self._dependency_handles if hasattr(dep, "ggml_log_set")), None)
+        if ggml is None and hasattr(self._lib, "ggml_log_set"):
+            ggml = self._lib
+        if ggml is None:
+            raise QwenTTSError("GGML logging is unavailable: libggml-base does not export ggml_log_set")
+        ggml.ggml_log_set.argtypes = [GGML_LOG_CB, ctypes.c_void_p]
+        ggml.ggml_log_set.restype = None
+        with _log_callback_lock:
+            path = self.path.resolve()
+            state = _log_callback_states.get(path)
+            if state is None:
+                state = _LogCallbackState()
+                _log_callback_states[path] = state
+            state.level = normalized
+            self._lib.qt_log_set(state.native_callback, None)
+            ggml.ggml_log_set(state.ggml_callback, None)
 
 
 class QwenTTS:
@@ -560,8 +618,9 @@ class QwenTTS:
         library_path: str | os.PathLike[str] | None = None,
         use_fa: bool = True,
         clamp_fp16: bool = False,
+        log_level: str | None = None,
     ):
-        self.library = QwenLibrary(library_path)
+        self.library = QwenLibrary(library_path, log_level=log_level)
         self._ctx: int | None = None
         self._lock = threading.Lock()
         self.last_synthesize_profile: dict[str, Any] | None = None
@@ -580,6 +639,7 @@ class QwenTTS:
         library_path: str | os.PathLike[str] | None = None,
         use_fa: bool = True,
         clamp_fp16: bool = False,
+        log_level: str | None = None,
     ) -> "QwenTTS":
         from .models import resolve_gguf_paths
 
@@ -595,6 +655,7 @@ class QwenTTS:
             library_path=library_path,
             use_fa=use_fa,
             clamp_fp16=clamp_fp16,
+            log_level=log_level,
         )
 
     def _init(
@@ -739,6 +800,9 @@ class QwenTTS:
 
     def set_log_callback(self, callback) -> None:
         self.library.set_log_callback(callback)
+
+    def set_log_level(self, level: str) -> None:
+        self.library.set_log_level(level)
 
     def synthesize(
         self,

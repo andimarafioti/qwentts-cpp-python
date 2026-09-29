@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 import os
+import re
 import shutil
 import shlex
 import subprocess
@@ -45,6 +46,96 @@ def metal_shader_compatibility(source: Path, enabled: bool):
         yield
     finally:
         shader.write_text(original)
+
+
+@contextmanager
+def native_logging_compatibility(source: Path):
+    """Preserve an embedding application's GGML callback during backend init.
+
+    The pinned native source replaces it unconditionally on first init. Keep
+    its existing deduplicating logger when GGML still has the default callback.
+    Restore the checkout after building; no native source changes are committed.
+    """
+    header = source / "src/backend.h"
+    original = header.read_text()
+    old = "        ggml_log_set(qt_ggml_log, nullptr);"
+    new = (
+        "        // ggml's default callback is exported by this pinned revision.\n"
+        "        ggml_log_callback callback = nullptr;\n"
+        "        void * user_data = nullptr;\n"
+        "        ggml_log_get(&callback, &user_data);\n"
+        "        if (callback == ggml_log_callback_default) {\n"
+        "            ggml_log_set(qt_ggml_log, nullptr);\n"
+        "        }"
+    )
+    if original.count(old) != 1:
+        raise SystemExit("Native backend logging changed; review the logging compatibility fix for this revision")
+    declaration = "extern \"C\" void ggml_log_callback_default(enum ggml_log_level, const char *, void *);\n"
+    marker = "static BackendPair backend_init(const char * label) {"
+    if original.count(marker) != 1:
+        raise SystemExit("Native backend layout changed; review the logging compatibility fix for this revision")
+    try:
+        header.write_text(original.replace(marker, declaration + marker).replace(old, new))
+        yield
+    finally:
+        header.write_text(original)
+
+
+@contextmanager
+def native_diagnostic_compatibility(source: Path):
+    """Route the pinned source's remaining direct diagnostics through qt_log.
+
+    These headers predate qwentts.cpp's callback API. Keep severity when
+    converting them, and restore the checkout once the wheel is built.
+    """
+    expected = {
+        "audio-io.h": 10, "audio-resample.h": 2, "bpe.h": 9,
+        "code-predictor-forward.h": 5, "code-predictor-weights.h": 4,
+        "convnext-block.h": 3, "dac-decoder-v2.h": 2,
+        "encoder-downsample.h": 2, "encoder-transformer.h": 3,
+        "gguf-weights.h": 9, "graph-arena.h": 1, "kv-cache.h": 3,
+        "prompt-builder.h": 13, "quantizer-decode.h": 4,
+        "quantizer-encode.h": 2, "rvq-file.h": 7, "seanet-encoder.h": 3,
+        "speaker-encoder-extract.h": 6, "speaker-encoder-weights.h": 3,
+        "talker-forward.h": 7, "talker-weights.h": 3,
+        "tokenizer-transformer.h": 3, "wav.h": 7, "weight-ctx.h": 2,
+    }
+    pattern = re.compile(r"fprintf\(stderr,\s*(.*?)\);", re.DOTALL)
+    originals = {}
+    try:
+        for name, count in expected.items():
+            path = source / "src" / name
+            original = path.read_text()
+            if len(pattern.findall(original)) != count or not original.startswith("#pragma once\n"):
+                raise SystemExit(f"Native diagnostics changed in {name}; review the logging compatibility fix")
+
+            def replace(match):
+                args = match.group(1)
+                format_match = re.search(r'"((?:[^"\\]|\\.)*)"', args)
+                if format_match is None:
+                    raise SystemExit(f"Native diagnostic format changed in {name}")
+                message = format_match.group(1).lower()
+                if "warning" in message or "no spk_enc." in message:
+                    level = "QT_LOG_WARN"
+                elif any(word in message for word in (
+                    "fatal", "failed", "cannot", "oom", "unsupported",
+                    "not a valid", "no audio data", "unknown format",
+                )):
+                    level = "QT_LOG_ERROR"
+                else:
+                    level = "QT_LOG_INFO"
+                # qt_log and the Python trampoline each add the line ending.
+                args = args.replace(r'\n"', '"')
+                return f"qt_log({level}, {args});"
+
+            transformed = pattern.sub(replace, original)
+            transformed = transformed.replace("#pragma once\n", '#pragma once\n#include "qt-error.h"\n', 1)
+            originals[path] = original
+            path.write_text(transformed)
+        yield
+    finally:
+        for path, original in originals.items():
+            path.write_text(original)
 
 
 def find_first(root: Path, patterns: list[str]) -> Path | None:
@@ -237,7 +328,9 @@ def main() -> int:
         cmake_args.extend(split_env_args(os.environ.get("QWENTTS_CPP_CMAKE_ARGS")))
         cmake_args.extend(args.cmake_arg)
 
-        with metal_shader_compatibility(source, args.backend == "metal"):
+        with (native_logging_compatibility(source),
+              native_diagnostic_compatibility(source),
+              metal_shader_compatibility(source, args.backend == "metal")):
             run(cmake_args)
             run(["cmake", "--build", str(build_dir), "--target", args.target, "-j", str(args.jobs)])
     copy_shared_libraries(build_dir, package_lib_dir)

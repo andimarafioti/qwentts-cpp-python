@@ -5,6 +5,8 @@ import gc
 import os
 import threading
 import weakref
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -22,7 +24,7 @@ from qwentts_cpp import (
     save_speaker_embedding,
     save_voice_ref,
 )
-from qwentts_cpp._binding import QtInitParams, QtTTSParams, QtVoiceRef
+from qwentts_cpp._binding import QtInitParams, QtTTSParams, QtVoiceRef, _LogCallbackState
 
 
 @pytest.mark.parametrize("version", [b"unknown", b"abcdef0 (2026-01-01)", b"", None, b"7df"])
@@ -146,6 +148,64 @@ def test_log_callback_survives_loader_and_is_reused(tmp_path, capsys):
 
     third_loader.set_log_callback(None)
     assert native.callback_address is None
+
+
+def test_quiet_log_level_filters_both_native_sources(capsys):
+    state = _LogCallbackState()
+    state.level = "warning"
+    for level, message in enumerate((b"qt debug", b"qt info", b"qt warning", b"qt error")):
+        state.native_callback(level, message, None)
+    for level, message in ((1, b"ggml debug\n"), (2, b"ggml info\n"),
+                           (3, b"ggml warning"), (5, b" continued\n"),
+                           (4, b"ggml error\n")):
+        state.ggml_callback(level, message, None)
+    assert capsys.readouterr().err == (
+        "qt warning\nqt error\nggml warning continued\nggml error\n"
+    )
+
+    state.level = "debug"
+    state.native_callback(0, b"qt debug", None)
+    state.ggml_callback(1, b"ggml debug\n", None)
+    assert capsys.readouterr().err == "qt debug\nggml debug\n"
+
+
+def test_log_level_callbacks_survive_repeated_loaders(tmp_path, capsys):
+    qt_set = Mock()
+    ggml_set = Mock()
+    native = SimpleNamespace(qt_log_set=qt_set)
+    ggml = SimpleNamespace(ggml_log_set=ggml_set)
+    path = tmp_path / "libqwen.so"
+
+    def install(level):
+        loader = QwenLibrary.__new__(QwenLibrary)
+        loader.path = path
+        loader._lib = native
+        loader._dependency_handles = [ggml]
+        loader._log_callback_handler = None
+        loader.set_log_level(level)
+        return loader
+
+    first = install("quiet")
+    qt_callback = qt_set.call_args.args[0]
+    ggml_callback = ggml_set.call_args.args[0]
+    first_ref = weakref.ref(first)
+    del first
+    gc.collect()
+    assert first_ref() is None
+    qt_callback(1, b"routine", None)
+    ggml_callback(2, b"routine\n", None)
+    qt_callback(2, b"warning", None)
+    ggml_callback(3, b"warning\n", None)
+    assert capsys.readouterr().err == "warning\nwarning\n"
+
+    second = install("verbose")
+    assert qt_set.call_args.args[0] is qt_callback
+    assert ggml_set.call_args.args[0] is ggml_callback
+    qt_callback(1, b"routine", None)
+    ggml_callback(2, b"routine\n", None)
+    assert capsys.readouterr().err == "routine\nroutine\n"
+    with pytest.raises(ValueError, match="log_level"):
+        second.set_log_level("silent")
 
 
 def test_log_handler_does_not_keep_tts_context_alive(tmp_path):
