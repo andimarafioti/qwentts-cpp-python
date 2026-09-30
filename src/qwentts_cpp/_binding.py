@@ -16,10 +16,10 @@ from typing import Any, Callable, Iterator, Sequence, Tuple
 
 import numpy as np
 
-QT_ABI_VERSION = 2
+QT_ABI_VERSION = 5
 # Upstream has no ABI/sizeof query. Check identity before any native function
 # writes a parameter struct; probing default_params itself is not memory-safe.
-QWENTTS_NATIVE_REVISION = "7df559a8ca25f66fee02970514ebe5f01dee9055"
+QWENTTS_NATIVE_REVISION = "6fae92914045cd83364d2845ceaa0f7969727319"
 RVQ_CODE_BITS = 11
 CODEC_FRAME_SAMPLES = 1920  # Fixed 12.5 Hz codec at 24 kHz.
 
@@ -144,6 +144,8 @@ class QtInitParams(ctypes.Structure):
         ("codec_path", ctypes.c_char_p),
         ("use_fa", ctypes.c_bool),
         ("clamp_fp16", ctypes.c_bool),
+        ("max_batch", ctypes.c_int),
+        ("codec_chunk_sec", ctypes.c_float),
     ]
 
 
@@ -159,12 +161,10 @@ class QtTTSParams(ctypes.Structure):
         ("ref_text", ctypes.c_char_p),
         ("seed", ctypes.c_int64),
         ("max_new_tokens", ctypes.c_int),
-        ("do_sample", ctypes.c_bool),
         ("temperature", ctypes.c_float),
         ("top_k", ctypes.c_int),
         ("top_p", ctypes.c_float),
         ("repetition_penalty", ctypes.c_float),
-        ("subtalker_do_sample", ctypes.c_bool),
         ("subtalker_temperature", ctypes.c_float),
         ("subtalker_top_k", ctypes.c_int),
         ("subtalker_top_p", ctypes.c_float),
@@ -173,8 +173,6 @@ class QtTTSParams(ctypes.Structure):
         ("cancel_user_data", ctypes.c_void_p),
         ("on_chunk", QT_AUDIO_CHUNK_CB),
         ("on_chunk_user_data", ctypes.c_void_p),
-        ("codec_chunk_sec", ctypes.c_float),
-        ("codec_left_context_sec", ctypes.c_float),
         ("ref_spk_emb", ctypes.POINTER(ctypes.c_float)),
         ("ref_spk_dim", ctypes.c_int),
         ("ref_codes", ctypes.POINTER(ctypes.c_int32)),
@@ -516,6 +514,12 @@ class QwenLibrary:
         lib.qt_log_set.restype = None
         lib.qt_duration_sec_to_tokens.argtypes = [ctypes.c_void_p, ctypes.c_float]
         lib.qt_duration_sec_to_tokens.restype = ctypes.c_int
+        lib.qt_n_languages.argtypes = [ctypes.c_void_p]
+        lib.qt_n_languages.restype = ctypes.c_int
+        lib.qt_language_name.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.qt_language_name.restype = ctypes.c_char_p
+        lib.qt_model_type.argtypes = [ctypes.c_void_p]
+        lib.qt_model_type.restype = ctypes.c_char_p
         try:
             lib.qt_num_codebooks.argtypes = [ctypes.c_void_p]
             lib.qt_num_codebooks.restype = ctypes.c_int
@@ -618,15 +622,19 @@ class QwenTTS:
         library_path: str | os.PathLike[str] | None = None,
         use_fa: bool = True,
         clamp_fp16: bool = False,
+        codec_chunk_sec: float = 24.0,
         log_level: str | None = None,
     ):
+        if not math.isfinite(codec_chunk_sec) or codec_chunk_sec < 0:
+            raise ValueError("codec_chunk_sec must be finite and nonnegative (0 selects the native default)")
         self.library = QwenLibrary(library_path, log_level=log_level)
         self._ctx: int | None = None
         self._lock = threading.Lock()
         self.last_synthesize_profile: dict[str, Any] | None = None
         self.last_stream_profile: dict[str, Any] | None = None
         self.last_extract_voice_ref_profile: dict[str, Any] | None = None
-        self._init(talker_path, codec_path, use_fa=use_fa, clamp_fp16=clamp_fp16)
+        self._init(talker_path, codec_path, use_fa=use_fa, clamp_fp16=clamp_fp16,
+                   codec_chunk_sec=codec_chunk_sec)
 
     @classmethod
     def from_pretrained(
@@ -639,6 +647,7 @@ class QwenTTS:
         library_path: str | os.PathLike[str] | None = None,
         use_fa: bool = True,
         clamp_fp16: bool = False,
+        codec_chunk_sec: float = 24.0,
         log_level: str | None = None,
     ) -> "QwenTTS":
         from .models import resolve_gguf_paths
@@ -655,6 +664,7 @@ class QwenTTS:
             library_path=library_path,
             use_fa=use_fa,
             clamp_fp16=clamp_fp16,
+            codec_chunk_sec=codec_chunk_sec,
             log_level=log_level,
         )
 
@@ -665,14 +675,18 @@ class QwenTTS:
         *,
         use_fa: bool,
         clamp_fp16: bool,
+        codec_chunk_sec: float,
     ) -> None:
         keepalive: list[bytes] = []
         params = QtInitParams()
         self.library._lib.qt_init_default_params(ctypes.byref(params))
+        if params.abi_version != QT_ABI_VERSION:
+            raise QwenTTSError(f"Initialization requires qwentts.cpp ABI v{QT_ABI_VERSION}")
         params.talker_path = _as_utf8(talker_path, keepalive)
         params.codec_path = _as_utf8(codec_path, keepalive)
         params.use_fa = bool(use_fa)
         params.clamp_fp16 = bool(clamp_fp16)
+        params.codec_chunk_sec = float(codec_chunk_sec)
         ctx = self.library._lib.qt_init(ctypes.byref(params))
         if not ctx:
             raise QwenTTSError(self.library.last_error())
@@ -705,7 +719,7 @@ class QwenTTS:
 
     def num_codebooks(self) -> int:
         if not self.library._has_qt_num_codebooks:
-            raise QwenTTSError("qt_num_codebooks is unavailable; cached RVQ references require qwentts.cpp ABI v2")
+            raise QwenTTSError("qt_num_codebooks is unavailable in this qwentts.cpp library")
         value = int(self.library._lib.qt_num_codebooks(self._require_ctx()))
         if value <= 0:
             raise QwenTTSError(self.library.last_error() or "qt_num_codebooks returned 0")
@@ -713,7 +727,7 @@ class QwenTTS:
 
     def speaker_names(self) -> list[str]:
         if not (self.library._has_qt_n_speakers and self.library._has_qt_speaker_name):
-            raise QwenTTSError("Speaker enumeration requires qwentts.cpp ABI v2")
+            raise QwenTTSError("Speaker enumeration is unavailable in this qwentts.cpp library")
         count = int(self.library._lib.qt_n_speakers(self._require_ctx()))
         names: list[str] = []
         for i in range(count):
@@ -721,6 +735,21 @@ class QwenTTS:
             if value:
                 names.append(value.decode("utf-8", errors="replace"))
         return names
+
+    def language_names(self) -> list[str]:
+        """Return supported language names; synthesis also accepts ``auto``."""
+        ctx = self._require_ctx()
+        names: list[str] = []
+        for i in range(int(self.library._lib.qt_n_languages(ctx))):
+            value = self.library._lib.qt_language_name(ctx, i)
+            if value:
+                names.append(value.decode("utf-8", errors="replace"))
+        return names
+
+    def model_type(self) -> str:
+        """Return ``base``, ``custom_voice``, or ``voice_design``."""
+        value = self.library._lib.qt_model_type(self._require_ctx())
+        return value.decode("utf-8", errors="replace") if value else ""
 
     def load_rvq_codes(self, path: str | os.PathLike[str], *, code_bits: int = RVQ_CODE_BITS) -> np.ndarray:
         return load_rvq_codes(path, self.num_codebooks(), code_bits=code_bits)
@@ -737,7 +766,7 @@ class QwenTTS:
     def extract_voice_ref(self, ref_audio_24k: np.ndarray) -> VoiceRef:
         """Extract reusable Base voice-clone conditioning from 24 kHz mono audio."""
         if not (self.library._has_qt_extract_voice_ref and self.library._has_qt_voice_ref_free):
-            raise QwenTTSError("qt_extract_voice_ref is unavailable; voice reference extraction requires qwentts.cpp ABI v2")
+            raise QwenTTSError("Voice reference extraction is unavailable in this qwentts.cpp library")
 
         profile: dict[str, Any] = {}
         start = time.perf_counter()
@@ -826,8 +855,6 @@ class QwenTTS:
         subtalker_temperature: float | None = None,
         subtalker_top_k: int | None = None,
         subtalker_top_p: float | None = None,
-        codec_chunk_sec: float = 24.0,
-        codec_left_context_sec: float = 2.0,
         dump_dir: str | os.PathLike[str] | None = None,
     ) -> Tuple[np.ndarray, int]:
         profile: dict[str, Any] = {"mode": "buffered"}
@@ -853,8 +880,6 @@ class QwenTTS:
             subtalker_temperature=subtalker_temperature,
             subtalker_top_k=subtalker_top_k,
             subtalker_top_p=subtalker_top_p,
-            codec_chunk_sec=codec_chunk_sec,
-            codec_left_context_sec=codec_left_context_sec,
             dump_dir=dump_dir,
         )
         profile["make_params_ms"] = (time.perf_counter() - params_start) * 1000
@@ -916,7 +941,6 @@ class QwenTTS:
         subtalker_top_k: int | None = None,
         subtalker_top_p: float | None = None,
         codec_chunk_sec: float = 0.64,
-        codec_left_context_sec: float = 2.0,
         first_chunk_frames: int = 4,
         dump_dir: str | os.PathLike[str] | None = None,
     ) -> Iterator[Tuple[np.ndarray, int]]:
@@ -928,7 +952,6 @@ class QwenTTS:
         A short final packet flushes on successful EOS.
         Python assembles packets from the native 1/2/4/8-frame callback ramp;
         a packet can therefore wait for a native chunk crossing its boundary.
-        codec_left_context_sec is ignored by the stateful native stream.
         """
         if (isinstance(first_chunk_frames, bool)
                 or not isinstance(first_chunk_frames, numbers.Integral)
@@ -944,7 +967,6 @@ class QwenTTS:
             "packet_frames": later_frames,
             "packet_count": 0,
             "codec_chunk_sec": float(codec_chunk_sec),
-            "codec_left_context_sec": float(codec_left_context_sec),
             "callback_count": 0,
             "callback_copy_ms_total": 0.0,
             "callback_queue_ms_total": 0.0,
@@ -1026,8 +1048,6 @@ class QwenTTS:
                     subtalker_temperature=subtalker_temperature,
                     subtalker_top_k=subtalker_top_k,
                     subtalker_top_p=subtalker_top_p,
-                    codec_chunk_sec=codec_chunk_sec,
-                    codec_left_context_sec=codec_left_context_sec,
                     dump_dir=dump_dir,
                 )
                 profile["make_params_ms"] = (time.perf_counter() - params_start) * 1000
@@ -1107,16 +1127,14 @@ class QwenTTS:
         subtalker_temperature: float | None,
         subtalker_top_k: int | None,
         subtalker_top_p: float | None,
-        codec_chunk_sec: float,
-        codec_left_context_sec: float,
         dump_dir: str | os.PathLike[str] | None,
     ) -> tuple[QtTTSParams, list[object]]:
         keepalive: list[object] = []
         params = QtTTSParams()
         self.library._lib.qt_tts_default_params(ctypes.byref(params))
 
-        if (ref_spk_emb is not None or ref_codes is not None) and params.abi_version < QT_ABI_VERSION:
-            raise QwenTTSError("Cached speaker/RVQ references require qwentts.cpp ABI v2")
+        if params.abi_version != QT_ABI_VERSION:
+            raise QwenTTSError(f"Synthesis requires qwentts.cpp ABI v{QT_ABI_VERSION}")
         if ref_audio_24k is not None and (ref_spk_emb is not None or ref_codes is not None):
             raise ValueError("ref_audio_24k is mutually exclusive with ref_spk_emb/ref_codes")
         if ref_codes is not None and ref_spk_emb is None:
@@ -1153,17 +1171,18 @@ class QwenTTS:
 
         params.seed = int(seed)
         params.max_new_tokens = int(max_new_tokens)
-        params.do_sample = bool(do_sample)
-        params.temperature = float(temperature)
+        # ABI v5 uses temperature=0 for greedy decoding on each stack.
+        params.temperature = float(temperature) if do_sample else 0.0
         params.top_k = int(top_k)
         params.top_p = float(top_p)
         params.repetition_penalty = float(repetition_penalty)
-        params.subtalker_do_sample = bool(do_sample if subtalker_do_sample is None else subtalker_do_sample)
-        params.subtalker_temperature = float(temperature if subtalker_temperature is None else subtalker_temperature)
+        subtalker_sample = do_sample if subtalker_do_sample is None else subtalker_do_sample
+        params.subtalker_temperature = (
+            float(temperature if subtalker_temperature is None else subtalker_temperature)
+            if subtalker_sample else 0.0
+        )
         params.subtalker_top_k = int(top_k if subtalker_top_k is None else subtalker_top_k)
         params.subtalker_top_p = float(top_p if subtalker_top_p is None else subtalker_top_p)
-        params.codec_chunk_sec = float(codec_chunk_sec)
-        params.codec_left_context_sec = float(codec_left_context_sec)
         return params, keepalive
 
     def _prepare_ref_codes(self, ref_codes: np.ndarray) -> tuple[np.ndarray, int]:

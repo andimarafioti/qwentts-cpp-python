@@ -6,7 +6,7 @@ name: Publish Hugging Face Wheels
       qwentts_ref:
         description: qwentts.cpp commit, tag, or branch to build
         required: true
-        default: 7df559a8ca25f66fee02970514ebe5f01dee9055
+        default: 6fae92914045cd83364d2845ceaa0f7969727319
       hf_repo_id:
         description: Hugging Face dataset repo for wheel hosting
         required: true
@@ -17,13 +17,13 @@ permissions:
 
 env:
   HF_WHEEL_REPO_ID: ${{ inputs.hf_repo_id || vars.HF_WHEEL_REPO_ID || 'andito/qwentts-cpp-python-wheels' }}
-  QWENTTS_REF: ${{ inputs.qwentts_ref || '7df559a8ca25f66fee02970514ebe5f01dee9055' }}
+  QWENTTS_REF: ${{ inputs.qwentts_ref || '6fae92914045cd83364d2845ceaa0f7969727319' }}
 
 jobs:
   build-metal-wheel:
     uses: ./.github/workflows/metal-wheel.yml
     with:
-      qwentts_ref: ${{ inputs.qwentts_ref || '7df559a8ca25f66fee02970514ebe5f01dee9055' }}
+      qwentts_ref: ${{ inputs.qwentts_ref || '6fae92914045cd83364d2845ceaa0f7969727319' }}
 
   build-wheels:
     name: Linux ${{ matrix.arch }} CUDA ${{ matrix.cuda_version }} HF wheel

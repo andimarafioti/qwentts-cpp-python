@@ -143,8 +143,23 @@ python -m twine check --strict wheelhouse/*.whl
 ### Native ABI compatibility
 
 The CI wheel build defaults to qwentts.cpp
-`7df559a8ca25f66fee02970514ebe5f01dee9055`, which retains ABI v2 and includes
-the latest static-graph, streaming-decode, and widened voice-route changes.
+`6fae92914045cd83364d2845ceaa0f7969727319` (September 28, 2026), which requires
+ABI v5 and includes the upstream batched compute worker, codec memory
+controls, language/model queries, and latest ggml fork update.
+
+ABI v5 changes the initialization and synthesis struct layouts; libraries
+built from the previous ABI v2 pin must be rebuilt. Python's `do_sample=False`
+and `subtalker_do_sample=False` now select greedy decoding by setting the
+corresponding native temperature to zero. Buffered codec chunk size is set
+once with `QwenTTS(..., codec_chunk_sec=24.0)` or
+`QwenTTS.from_pretrained(..., codec_chunk_sec=24.0)`, rather than on
+`synthesize()`. Zero selects the native default. The codec derives its own
+left context; `codec_left_context_sec` is no longer accepted. Streaming's
+`codec_chunk_sec` still controls Python output packet size independently.
+The wrapper continues to serialize requests on each context (native
+`max_batch=1`). `tts.language_names()` lists the model's languages (synthesis
+also accepts `lang="auto"`), and `tts.model_type()` reports `base`,
+`custom_voice`, or `voice_design`.
 
 The loader verifies this native revision before calling functions that write
 ctypes parameter buffers. Upstream does not expose an ABI-version or struct-size
@@ -229,15 +244,15 @@ limit flushes any remaining audio as a short packet, including utterances
 shorter than the requested first packet. Cancellation or errors discard the
 unfinished packet; closing the iterator requests native cancellation.
 
-Packet assembly happens in Python, using the existing verified ABI v2 library.
+Packet assembly happens in Python, using the verified ABI v5 library.
 The native decoder still emits its fixed 1→2→4→8-frame ramp, then 8-frame
 chunks. Consequently, first packets of 1, 2, 4, and 8 frames become available
 after native output has reached 1, 3, 7, and 15 frames respectively (or earlier
 at end-of-speech). Packet boundaries preserve every PCM sample but do not
 change native decode scheduling. Later packets may become available together
 when a native callback spans several packet boundaries; this is not a timed
-playback scheduler. `codec_left_context_sec` is ignored by the stateful native
-stream. Buffered `synthesize()` retains its native codec chunking behavior.
+playback scheduler. Buffered `synthesize()` uses the native codec chunk size
+configured when the context is created; the native codec derives its left context.
 
 `last_stream_profile` keeps `first_callback_*` and `callback_count` for raw
 native callbacks. `first_packet_ready_ms`, `first_packet_audio_s`, and
@@ -281,7 +296,7 @@ the larger first packet is assembled by the binding.
 
 ## Cached voice references
 
-qwentts.cpp ABI v2 can skip reference WAV encoding for Base voice cloning by
+qwentts.cpp can skip reference WAV encoding for Base voice cloning by
 passing precomputed latents:
 
 - `.spk`: raw float32 speaker embedding from `qwen-codec --talker`
