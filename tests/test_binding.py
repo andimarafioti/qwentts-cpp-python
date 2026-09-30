@@ -24,10 +24,13 @@ from qwentts_cpp import (
     save_speaker_embedding,
     save_voice_ref,
 )
-from qwentts_cpp._binding import QtInitParams, QtTTSParams, QtVoiceRef, _LogCallbackState
+from qwentts_cpp._binding import (
+    QT_ABI_VERSION, QWENTTS_NATIVE_REVISION, QtInitParams, QtTTSParams,
+    QtVoiceRef, _LogCallbackState,
+)
 
 
-@pytest.mark.parametrize("version", [b"unknown", b"abcdef0 (2026-01-01)", b"", None, b"7df"])
+@pytest.mark.parametrize("version", [b"unknown", b"abcdef0 (2026-01-01)", b"", None, b"7df", b"7df559a (2026-07-17)"])
 def test_unverified_library_rejected_before_binding(monkeypatch, tmp_path, version):
     from unittest.mock import Mock
 
@@ -53,7 +56,7 @@ def test_missing_native_symbol_reports_incompatible_library(monkeypatch, tmp_pat
         QwenLibrary(path)
 
 
-@pytest.mark.parametrize("revision", ["7df559a", "7df559a8", "7df559a8ca25f66fee02970514ebe5f01dee9055"])
+@pytest.mark.parametrize("revision", [QWENTTS_NATIVE_REVISION[:7], QWENTTS_NATIVE_REVISION[:8], QWENTTS_NATIVE_REVISION])
 def test_verified_native_revision_is_accepted(revision):
     from unittest.mock import Mock
 
@@ -61,6 +64,128 @@ def test_verified_native_revision_is_accepted(revision):
     library._lib = Mock()
     library._lib.qt_version.return_value = f"{revision} (2026-05-01)".encode()
     library._validate_native_revision()
+
+
+def test_native_defaults_use_abi_v5_when_available():
+    path = os.environ.get("QWENTTS_CPP_LIBRARY")
+    if not path:
+        pytest.skip("QWENTTS_CPP_LIBRARY not set")
+    library = QwenLibrary(path)
+    init = QtInitParams()
+    tts = QtTTSParams()
+    library._lib.qt_init_default_params(ctypes.byref(init))
+    library._lib.qt_tts_default_params(ctypes.byref(tts))
+    assert init.abi_version == tts.abi_version == QT_ABI_VERSION == 5
+    assert init.max_batch == 1
+    assert init.codec_chunk_sec == 24.0
+    assert tts.temperature == pytest.approx(0.9)
+    assert tts.subtalker_temperature == pytest.approx(0.9)
+
+
+@pytest.mark.parametrize("chunk_sec", [0.0, 0.64, 24.0])
+def test_init_passes_buffered_codec_chunk_size(monkeypatch, chunk_sec):
+    def defaults(params):
+        params._obj.abi_version = QT_ABI_VERSION
+        params._obj.max_batch = 1
+
+    def init(params):
+        params = params._obj
+        assert params.abi_version == 5
+        assert params.max_batch == 1
+        assert params.codec_chunk_sec == pytest.approx(chunk_sec)
+        assert params.talker_path == b"talker.gguf"
+        assert params.codec_path == b"codec.gguf"
+        return 123
+
+    native = SimpleNamespace(qt_init_default_params=defaults, qt_init=init, qt_free=Mock())
+    monkeypatch.setattr("qwentts_cpp._binding.QwenLibrary", lambda *args, **kwargs: SimpleNamespace(_lib=native))
+    with QwenTTS("talker.gguf", "codec.gguf", codec_chunk_sec=chunk_sec):
+        pass
+    native.qt_free.assert_called_once_with(123)
+
+
+@pytest.mark.parametrize("chunk_sec", [-1.0, float("nan"), float("inf")])
+def test_invalid_buffered_chunk_size_rejected_before_loading(monkeypatch, chunk_sec):
+    loader = Mock()
+    monkeypatch.setattr("qwentts_cpp._binding.QwenLibrary", loader)
+    with pytest.raises(ValueError, match="codec_chunk_sec"):
+        QwenTTS("talker.gguf", "codec.gguf", codec_chunk_sec=chunk_sec)
+    loader.assert_not_called()
+
+
+def test_from_pretrained_forwards_buffered_chunk_size(monkeypatch):
+    resolve = Mock(return_value=("talker.gguf", "codec.gguf"))
+    monkeypatch.setattr("qwentts_cpp.models.resolve_gguf_paths", resolve)
+
+    class CaptureTTS(QwenTTS):
+        def __init__(self, *args, **kwargs):
+            self.args, self.kwargs = args, kwargs
+
+    tts = CaptureTTS.from_pretrained("model", codec_chunk_sec=3.2, local_files_only=True)
+    assert tts.args == ("talker.gguf", "codec.gguf")
+    assert tts.kwargs["codec_chunk_sec"] == 3.2
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("do_sample,subtalker_do_sample,talker_temp,subtalker_temp", [
+    (True, None, 0.7, 0.3),
+    (False, None, 0.0, 0.0),
+    (True, False, 0.7, 0.0),
+    (False, True, 0.0, 0.3),
+])
+def test_sampling_flags_translate_to_native_temperatures(
+    stream, do_sample, subtalker_do_sample, talker_temp, subtalker_temp,
+):
+    def defaults(params):
+        params._obj.abi_version = QT_ABI_VERSION
+
+    def synthesize(ctx, params, audio):
+        params = params._obj
+        assert params.abi_version == 5
+        assert params.temperature == pytest.approx(talker_temp)
+        assert params.subtalker_temperature == pytest.approx(subtalker_temp)
+        assert params.top_k == 17
+        assert params.subtalker_top_k == 11
+        assert params.text == b"test"
+        assert params.lang == b"auto"
+        return 0
+
+    tts = QwenTTS.__new__(QwenTTS)
+    tts._ctx = 123
+    tts._lock = threading.Lock()
+    tts.library = SimpleNamespace(_lib=SimpleNamespace(
+        qt_tts_default_params=defaults, qt_synthesize=synthesize, qt_audio_free=Mock(),
+        qt_free=Mock(),
+    ))
+    kwargs = dict(text="test", lang="auto", do_sample=do_sample,
+                  subtalker_do_sample=subtalker_do_sample, temperature=0.7,
+                  subtalker_temperature=0.3, top_k=17, subtalker_top_k=11)
+    if stream:
+        assert list(tts.stream(**kwargs)) == []
+    else:
+        audio, rate = tts.synthesize(**kwargs)
+        assert audio.size == 0
+        assert rate == 24000
+
+
+def test_language_and_model_queries_use_context():
+    native = SimpleNamespace(
+        qt_n_languages=Mock(return_value=2),
+        qt_language_name=Mock(side_effect=[b"english", b"chinese"]),
+        qt_model_type=Mock(return_value=b"base"), qt_free=Mock(),
+    )
+    tts = QwenTTS.__new__(QwenTTS)
+    tts._ctx = 123
+    tts.library = SimpleNamespace(_lib=native)
+    assert tts.language_names() == ["english", "chinese"]
+    assert tts.model_type() == "base"
+    native.qt_n_languages.assert_called_once_with(123)
+    native.qt_model_type.assert_called_once_with(123)
+    tts.close()
+    with pytest.raises(QwenTTSError, match="closed"):
+        tts.language_names()
+    with pytest.raises(QwenTTSError, match="closed"):
+        tts.model_type()
 
 
 def _pack_rvq_codes(codes, code_bits=11):
@@ -262,7 +387,7 @@ def test_native_log_callback_survives_repeated_init_when_available():
     second.set_log_callback(None)
 
 
-def test_tts_params_contains_abi_v2_latent_tail_fields():
+def test_tts_params_contains_latent_tail_fields():
     assert [name for name, _ctype in QtTTSParams._fields_[-4:]] == [
         "ref_spk_emb",
         "ref_spk_dim",

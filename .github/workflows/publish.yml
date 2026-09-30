@@ -9,7 +9,7 @@ name: Publish
       qwentts_ref:
         description: qwentts.cpp commit, tag, or branch to build
         required: true
-        default: 7df559a8ca25f66fee02970514ebe5f01dee9055
+        default: 6fae92914045cd83364d2845ceaa0f7969727319
 
 permissions:
   contents: read
@@ -19,7 +19,7 @@ jobs:
     uses: ./.github/workflows/metal-wheel.yml
     with:
       pypi: true
-      qwentts_ref: ${{ inputs.qwentts_ref || '7df559a8ca25f66fee02970514ebe5f01dee9055' }}
+      qwentts_ref: ${{ inputs.qwentts_ref || '6fae92914045cd83364d2845ceaa0f7969727319' }}
 
   build-wheels:
     name: Linux ${{ matrix.arch }} CUDA 12.8 wheel
@@ -46,7 +46,7 @@ jobs:
       QWENTTS_CPP_BACKEND: cuda
       QWENTTS_CPP_BUILD_JOBS: ${{ matrix.build_jobs }}
       QWENTTS_CPP_WHEEL_BUILD_TAG: 1cu128
-      QWENTTS_REF: ${{ inputs.qwentts_ref || '7df559a8ca25f66fee02970514ebe5f01dee9055' }}
+      QWENTTS_REF: ${{ inputs.qwentts_ref || '6fae92914045cd83364d2845ceaa0f7969727319' }}
       CUDA_ARCHITECTURES: ${{ matrix.cuda_architectures }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
