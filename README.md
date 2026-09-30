@@ -34,28 +34,33 @@ CPU builds are still useful for development and smoke tests.
 
 ## Installation
 
-Starting with 0.4.1, PyPI provides Linux CUDA 12.8 wheels and macOS 14+
+The current release is **0.5.0**, with qwentts.cpp ABI v5. PyPI provides
+Linux CUDA 12.8 wheels and macOS 14+
 Apple Silicon Metal wheels. Pip selects the appropriate wheel automatically:
 
 ```bash
-pip install qwentts-cpp-python
+python -m pip install --upgrade "qwentts-cpp-python>=0.5.0"
 ```
 
 Additional backend-specific wheels are published to Hugging Face Hub as local-version
 variants. Use them when the PyPI CUDA 12.8 wheel does not match the runtime or
 GPU target, for example DGX Spark / GB10 with CUDA 13:
 
+Hugging Face variants are published separately. The currently available release
+is **0.4.1** (ABI v2); use PyPI **0.5.0** for the ABI v5 upgrade on CUDA 12.8
+or macOS Metal.
+
 ```bash
-pip install "qwentts-cpp-python==0.4.0+cpu" \
+pip install "qwentts-cpp-python==0.4.1+cpu" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cpu
 
-pip install "qwentts-cpp-python==0.4.0+cu124" \
+pip install "qwentts-cpp-python==0.4.1+cu124" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu124
 
-pip install "qwentts-cpp-python==0.4.0+cu128" \
+pip install "qwentts-cpp-python==0.4.1+cu128" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
 
-pip install "qwentts-cpp-python==0.4.0+cu130" \
+pip install "qwentts-cpp-python==0.4.1+cu130" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
 ```
 
@@ -78,7 +83,7 @@ revision; validation artifacts are not reused for publishing.
 For **macOS 14 or newer, arm64 Python 3.10+**, install directly from PyPI:
 
 ```bash
-python -m pip install --only-binary=qwentts-cpp-python "qwentts-cpp-python>=0.4.1"
+python -m pip install --upgrade --only-binary=qwentts-cpp-python "qwentts-cpp-python>=0.5.0"
 python -c "from qwentts_cpp import QwenLibrary; print(QwenLibrary().version())"
 ```
 
@@ -89,15 +94,16 @@ from macOS. The build applies a shader-only workaround for the pinned ggml's
 invalid scalar-to-BF16-vector fill cast, restoring the source checkout afterward;
 the C ABI is unchanged. Use a native arm64 Python, rather than an Intel Python
 under Rosetta.
-Downstream packages can declare `qwentts-cpp-python>=0.4.1` as a regular
+Downstream packages can declare `qwentts-cpp-python>=0.5.0` as a regular
 dependency, without an extra index or a direct wheel URL. The macOS platform
 tag distinguishes Metal wheels from Linux CUDA wheels on PyPI. Intel Macs and
 macOS versions older than 14 are not supported by this Metal wheel.
 
-The earlier `0.4.0` Metal wheel remains available on Hugging Face:
+The separately published `0.4.1` Metal variant is also available on Hugging Face
+(ABI v2; PyPI 0.5.0 is recommended for ABI v5):
 
 ```bash
-python -m pip install "qwentts-cpp-python==0.4.0+metal" \
+python -m pip install "qwentts-cpp-python==0.4.1+metal" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/metal
 ```
 
@@ -106,7 +112,7 @@ the plain public version without this suffix.
 
 Before publication, download the `hf-wheel-metal-macosx-arm64` artifact from
 the PR's **Apple Silicon Metal wheel** check, unzip it, and install its `.whl`
-with `python -m pip install /path/to/qwentts_cpp_python-0.4.1+metal-*.whl`.
+with `python -m pip install /path/to/qwentts_cpp_python-0.5.0+metal-*.whl`.
 This macOS check also runs for PRs; the Linux matrix remains dispatch-only.
 Both publishers rebuild and check their own Metal wheels.
 
