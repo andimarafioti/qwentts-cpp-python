@@ -46,21 +46,20 @@ Additional backend-specific wheels are published to Hugging Face Hub as local-ve
 variants. Use them when the PyPI CUDA 12.8 wheel does not match the runtime or
 GPU target, for example DGX Spark / GB10 with CUDA 13:
 
-Hugging Face variants are published separately. The currently available release
-is **0.4.1** (ABI v2); use PyPI **0.5.0** for the ABI v5 upgrade on CUDA 12.8
-or macOS Metal.
+Hugging Face variants are published separately. Release **0.5.0** uses ABI v5
+for all backends, matching the public PyPI release.
 
 ```bash
-pip install "qwentts-cpp-python==0.4.1+cpu" \
+pip install "qwentts-cpp-python==0.5.0+cpu" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cpu
 
-pip install "qwentts-cpp-python==0.4.1+cu124" \
+pip install "qwentts-cpp-python==0.5.0+cu124" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu124
 
-pip install "qwentts-cpp-python==0.4.1+cu128" \
+pip install "qwentts-cpp-python==0.5.0+cu128" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu128
 
-pip install "qwentts-cpp-python==0.4.1+cu130" \
+pip install "qwentts-cpp-python==0.5.0+cu130" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/cu130
 ```
 
@@ -99,11 +98,10 @@ dependency, without an extra index or a direct wheel URL. The macOS platform
 tag distinguishes Metal wheels from Linux CUDA wheels on PyPI. Intel Macs and
 macOS versions older than 14 are not supported by this Metal wheel.
 
-The separately published `0.4.1` Metal variant is also available on Hugging Face
-(ABI v2; PyPI 0.5.0 is recommended for ABI v5):
+The separately published `0.5.0+metal` variant is also available on Hugging Face:
 
 ```bash
-python -m pip install "qwentts-cpp-python==0.4.1+metal" \
+python -m pip install "qwentts-cpp-python==0.5.0+metal" \
   -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/metal
 ```
 
