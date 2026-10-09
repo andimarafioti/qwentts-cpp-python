@@ -20,6 +20,12 @@ env:
   QWENTTS_REF: ${{ inputs.qwentts_ref || '6fae92914045cd83364d2845ceaa0f7969727319' }}
 
 jobs:
+  build-rocm-wheel:
+    uses: ./.github/workflows/hip-wheel.yml
+    with:
+      qwentts_ref: ${{ inputs.qwentts_ref || '6fae92914045cd83364d2845ceaa0f7969727319' }}
+      artifact_name: hf-wheel-rocm724-linux-x86_64
+
   build-metal-wheel:
     uses: ./.github/workflows/metal-wheel.yml
     with:
@@ -264,6 +270,7 @@ jobs:
       - build-wheels
       - build-cpu-wheels
       - build-metal-wheel
+      - build-rocm-wheel
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3

@@ -123,8 +123,13 @@ def main() -> int:
                 ],
                 "```",
                 "",
-                "The wheels do not bundle CUDA runtime or cuBLAS libraries. Use a base image or",
-                "system installation that provides the matching CUDA runtime.",
+                "CUDA wheels require the matching system CUDA runtime and cuBLAS libraries.",
+                "ROCm wheels require the matching system ROCm runtime, hipBLAS, hipBLASLt,",
+                "rocBLAS, and rocBLAS/Tensile assets; these are not bundled in the wheel.",
+                "The `rocm724` wheel targets Linux x86_64, Ubuntu 24.04, ROCm 7.2.4, and",
+                "MI300X (`gfx942`). Its `linux_x86_64` tag does not check the Linux distribution",
+                "or GPU architecture; install it only in the documented environment.",
+                "It does not claim manylinux portability or support for other AMD targets.",
                 "",
             ]
         )

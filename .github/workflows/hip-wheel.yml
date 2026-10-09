@@ -3,6 +3,20 @@ name: Linux HIP build and wheel validation
 "on":
   pull_request:
   workflow_dispatch:
+    inputs:
+      qwentts_ref:
+        description: qwentts.cpp revision (must match the binding's verified ABI)
+        type: string
+        default: 6fae92914045cd83364d2845ceaa0f7969727319
+  workflow_call:
+    inputs:
+      qwentts_ref:
+        type: string
+        default: 6fae92914045cd83364d2845ceaa0f7969727319
+      artifact_name:
+        description: Artifact name used by the calling publisher
+        type: string
+        default: hip-wheel-rocm724-gfx942-linux-x86_64
 
 permissions:
   contents: read
@@ -12,7 +26,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      QWENTTS_REF: 6fae92914045cd83364d2845ceaa0f7969727319
+      QWENTTS_REF: ${{ inputs.qwentts_ref || '6fae92914045cd83364d2845ceaa0f7969727319' }}
       ROCM_IMAGE: rocm/dev-ubuntu-24.04:7.2.4-complete@sha256:92f309c51b52cef8762867848f1529dee821624f23cd5df38455e819538f762f
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -43,7 +57,7 @@ jobs:
             git config --global --add safe.directory /workspace/third_party/qwentts.cpp
             git config --global --add safe.directory /workspace/third_party/qwentts.cpp/ggml
             python3 -m venv /opt/hip-test
-            /opt/hip-test/bin/python -m pip install "setuptools>=77" wheel build twine pytest numpy huggingface-hub
+            /opt/hip-test/bin/python -m pip install "setuptools>=77" wheel build twine auditwheel pytest numpy huggingface-hub
             # These remain system dependencies; no native build path is added.
             printf "/opt/rocm/lib\n/opt/rocm/lib64\n" > /etc/ld.so.conf.d/qwentts-rocm.conf
             ldconfig
@@ -62,6 +76,9 @@ jobs:
             /opt/hip-test/bin/python scripts/set_local_version.py rocm724
             /opt/hip-test/bin/python -m build --wheel
             /opt/hip-test/bin/python -m twine check --strict dist/*.whl
+            # Report the ABI floor and external dependencies. This wheel keeps
+            # its linux_x86_64 tag; it does not claim manylinux portability.
+            /opt/hip-test/bin/python -m auditwheel show dist/*.whl
             PYTHONPATH=src QWENTTS_CPP_SOURCE=third_party/qwentts.cpp \
               /opt/hip-test/bin/python -m pytest -q tests/test_native_abi.py tests/test_build_native.py
           '
@@ -88,7 +105,7 @@ jobs:
           '
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: hip-wheel-rocm724-gfx942-linux-x86_64
+          name: ${{ inputs.artifact_name || 'hip-wheel-rocm724-gfx942-linux-x86_64' }}
           path: dist/*.whl
           retention-days: 7
       - name: Remove the build container
