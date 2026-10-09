@@ -69,11 +69,11 @@ def test_hip_wheel_loads_without_source_or_build_directories(tmp_path, monkeypat
                  "QWENTTS_CPP_WHEEL_BUILD_TAG"):
         env.pop(name, None)
     subprocess.run([sys.executable, "setup.py", "bdist_wheel", "--dist-dir", str(wheelhouse)],
-                   cwd=project, env=env, check=True, capture_output=True, text=True)
+                   cwd=project, env=env, check=True, text=True)
     wheel, = wheelhouse.glob("*.whl")
     installed = tmp_path / "installed"
     subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", "--target", str(installed), str(wheel)],
-                   env=env, check=True, capture_output=True, text=True)
+                   env=env, check=True, text=True)
     shutil.rmtree(project)
     shutil.rmtree(build)
     probe = (

@@ -43,7 +43,7 @@ jobs:
             git config --global --add safe.directory /workspace/third_party/qwentts.cpp
             git config --global --add safe.directory /workspace/third_party/qwentts.cpp/ggml
             python3 -m venv /opt/hip-test
-            /opt/hip-test/bin/python -m pip install build twine pytest numpy huggingface-hub
+            /opt/hip-test/bin/python -m pip install "setuptools>=77" wheel build twine pytest numpy huggingface-hub
             # These remain system dependencies; no native build path is added.
             printf "/opt/rocm/lib\n/opt/rocm/lib64\n" > /etc/ld.so.conf.d/qwentts-rocm.conf
             ldconfig
