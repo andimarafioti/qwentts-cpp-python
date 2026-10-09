@@ -147,9 +147,8 @@ python -m twine check --strict wheelhouse/*.whl
 ### AMD ROCm / HIP (Linux)
 
 The Hugging Face publisher builds a separate `+rocm724` wheel for **Linux
-x86_64, Ubuntu 24.04, ROCm 7.2.4, and MI300X (`gfx942`)**. The first published
-release is pending AMD hardware validation and a publishing workflow run.
-Once published, install the ROCm flavor explicitly:
+x86_64, Ubuntu 24.04, ROCm 7.2.4, and MI300X (`gfx942`)**. After a successful
+Hugging Face publishing run, install the ROCm flavor explicitly:
 
 ```bash
 python -m pip install --upgrade --only-binary=qwentts-cpp-python \
@@ -168,6 +167,9 @@ The reusable HIP workflow builds a fresh wheel when called by the Hugging
 Face publisher, runs the same ABI and clean-installed checks as the PR job,
 and reports platform requirements with `auditwheel show`. The publisher
 includes the result in the `rocm724` flavor index alongside CPU/CUDA/Metal.
+Dispatch **Publish Hugging Face Wheels** with `backend=rocm724` to publish
+only a fresh ROCm build and preserve the other published flavor indexes and
+wheel files. The default `backend=all` rebuilds every supported backend.
 
 The build helper supports `--backend hip` or `QWENTTS_CPP_BACKEND=hip` on
 Linux. It enables `GGML_HIP` and HIP graphs, builds shared GGML libraries,

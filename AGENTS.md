@@ -30,6 +30,10 @@ creates the public dataset repo if needed, and uploads the wheel index using
 the `HF_TOKEN` repository secret. Do not upload those local-version variants to
 PyPI.
 
+The Hugging Face publisher's `backend=rocm724` dispatch selection builds
+only a fresh ROCm wheel and preserves the other published flavor indexes and
+wheel files using Hub metadata. The default `backend=all` rebuilds all flavors.
+
 The `+metal` flavor is a macOS 14+ arm64 wheel with embedded Metal shaders and
 bundled native dylibs. The reusable `.github/workflows/metal-wheel.yml` builds,
 repairs, validates ABI layouts, and tests a clean wheel install. It runs for PRs

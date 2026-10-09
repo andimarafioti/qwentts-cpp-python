@@ -3,6 +3,11 @@ name: Publish Hugging Face Wheels
 "on":
   workflow_dispatch:
     inputs:
+      backend:
+        description: Publish all backends or only ROCm 7.2.4
+        type: choice
+        options: [all, rocm724]
+        default: all
       qwentts_ref:
         description: qwentts.cpp commit, tag, or branch to build
         required: true
@@ -27,11 +32,13 @@ jobs:
       artifact_name: hf-wheel-rocm724-linux-x86_64
 
   build-metal-wheel:
+    if: ${{ inputs.backend != 'rocm724' }}
     uses: ./.github/workflows/metal-wheel.yml
     with:
       qwentts_ref: ${{ inputs.qwentts_ref || '6fae92914045cd83364d2845ceaa0f7969727319' }}
 
   build-wheels:
+    if: ${{ inputs.backend != 'rocm724' }}
     name: Linux ${{ matrix.arch }} CUDA ${{ matrix.cuda_version }} HF wheel
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -202,6 +209,7 @@ jobs:
           path: wheelhouse/*.whl
 
   build-cpu-wheels:
+    if: ${{ inputs.backend != 'rocm724' }}
     name: Linux ${{ matrix.arch }} CPU HF wheel
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -266,6 +274,7 @@ jobs:
 
   publish-hf:
     name: Publish HF wheel index
+    if: ${{ !cancelled() && needs.build-rocm-wheel.result == 'success' && (inputs.backend == 'rocm724' || (needs.build-wheels.result == 'success' && needs.build-cpu-wheels.result == 'success' && needs.build-metal-wheel.result == 'success')) }}
     needs:
       - build-wheels
       - build-cpu-wheels
@@ -288,13 +297,23 @@ jobs:
           merge-multiple: true
 
       - name: Build wheel index
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          PRESERVE_EXISTING: ${{ inputs.backend == 'rocm724' }}
         run: |
           python -m pip install --upgrade pip huggingface-hub twine
           python -m twine check --strict dist/*.whl
+          index_args=()
+          if [ "$PRESERVE_EXISTING" = true ]; then
+            # Ensure a new dataset exists before reading its published filenames.
+            python -c 'import os; from huggingface_hub import HfApi; HfApi().create_repo(os.environ["HF_WHEEL_REPO_ID"], repo_type="dataset", private=False, exist_ok=True)'
+            index_args+=(--preserve-existing)
+          fi
           python scripts/prepare_hf_wheel_repo.py \
             --dist dist \
             --out hf-upload \
-            --repo-id "$HF_WHEEL_REPO_ID"
+            --repo-id "$HF_WHEEL_REPO_ID" \
+            "${index_args[@]}"
 
       - name: Upload to Hugging Face
         env:
