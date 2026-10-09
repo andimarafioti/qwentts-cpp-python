@@ -143,7 +143,37 @@ def relocate_macos_libraries(copied: list[Path], build_dir: Path) -> None:
         run(["codesign", "--force", "--sign", "-", str(path)])
 
 
+def validate_hip_build_mode(build_dir: Path) -> None:
+    """Reject module backends; the package supports linked HIP backends only."""
+    error = (
+        "Dynamic HIP backends (GGML_BACKEND_DL=ON / libggml-hip.so modules) "
+        "are not supported by this package. Rebuild with GGML_BACKEND_DL=OFF "
+        "and --clean to produce the linked, versioned HIP runtime."
+    )
+    cache = build_dir / "CMakeCache.txt"
+    if cache.is_file():
+        for line in cache.read_text().splitlines():
+            name, separator, value = line.partition("=")
+            if separator and name.split(":", 1)[0] == "GGML_BACKEND_DL":
+                value = value.upper()
+                disabled = ("", "0", "OFF", "NO", "FALSE", "N", "IGNORE", "NOTFOUND")
+                if value not in disabled and not value.endswith("-NOTFOUND"):
+                    raise SystemExit(error)
+    module = find_first(build_dir, ["libggml-hip.so"])
+    versioned = find_first(build_dir, ["libggml-hip.so.0", "libggml-hip.so.*"])
+    # A normal shared build also has an unversioned linker symlink. Accept
+    # that alias only when it resolves to the versioned runtime we package.
+    if module and (versioned is None or module.resolve() != versioned.resolve()):
+        raise SystemExit(error)
+
+
 def copy_shared_libraries(build_dir: Path, package_lib_dir: Path) -> None:
+    hip_library = find_first(build_dir, ["libggml-hip.so.0", "libggml-hip.so.*"])
+    if sys.platform.startswith("linux") and find_first(build_dir, ["libggml-hip.so", "libggml-hip.so.*"]):
+        validate_hip_build_mode(build_dir)
+    patchelf = shutil.which("patchelf")
+    if sys.platform.startswith("linux") and hip_library and not patchelf:
+        raise SystemExit("Packaging HIP libraries requires patchelf to set sibling-library RPATHs")
     package_lib_dir.mkdir(parents=True, exist_ok=True)
     for path in package_lib_dir.iterdir():
         if path.name == ".gitkeep":
@@ -157,6 +187,7 @@ def copy_shared_libraries(build_dir: Path, package_lib_dir: Path) -> None:
             ("libggml-base.so.0", ["libggml-base.so.0", "libggml-base.so.*"]),
             ("libggml-cpu.so.0", ["libggml-cpu.so.0", "libggml-cpu.so.*"]),
             ("libggml-cuda.so.0", ["libggml-cuda.so.0", "libggml-cuda.so.*"]),
+            ("libggml-hip.so.0", ["libggml-hip.so.0", "libggml-hip.so.*"]),
             ("libggml-vulkan.so.0", ["libggml-vulkan.so.0", "libggml-vulkan.so.*"]),
             ("libggml-sycl.so.0", ["libggml-sycl.so.0", "libggml-sycl.so.*"]),
             ("libggml.so.0", ["libggml.so.0", "libggml.so.*"]),
@@ -206,13 +237,14 @@ def copy_shared_libraries(build_dir: Path, package_lib_dir: Path) -> None:
     if sys.platform == "darwin":
         relocate_macos_libraries(copied, build_dir)
 
-    patchelf = shutil.which("patchelf")
     if patchelf and sys.platform.startswith("linux"):
         for path in copied:
             if path.is_file() and ".so" in path.name:
                 try:
                     run([patchelf, "--set-rpath", "$ORIGIN", str(path)])
                 except subprocess.CalledProcessError:
+                    if hip_library:
+                        raise
                     pass
 
     if os.environ.get("QWENTTS_CPP_NO_STRIP") != "1":
@@ -230,10 +262,16 @@ def main() -> int:
     parser.add_argument("--build-dir", default=os.environ.get("QWENTTS_CPP_BUILD_DIR", "build/qwentts-cpp"))
     parser.add_argument(
         "--backend",
-        choices=["cpu", "cuda", "metal", "vulkan", "sycl"],
+        choices=["cpu", "cuda", "hip", "metal", "vulkan", "sycl"],
         default=os.environ.get("QWENTTS_CPP_BACKEND", "metal" if sys.platform == "darwin" else "cuda"),
     )
     parser.add_argument("--cuda-compiler", default=os.environ.get("CMAKE_CUDA_COMPILER", "/usr/local/cuda/bin/nvcc"))
+    parser.add_argument("--hip-compiler", default=os.environ.get("CMAKE_HIP_COMPILER"),
+                        help="HIP clang++ compiler (otherwise CMake discovers it)")
+    parser.add_argument("--hip-architectures", default=os.environ.get("CMAKE_HIP_ARCHITECTURES"),
+                        help="GPU targets, e.g. gfx942 or a quoted semicolon-separated list")
+    parser.add_argument("--rocm-path", default=os.environ.get("ROCM_PATH"),
+                        help="ROCm installation prefix (otherwise upstream discovers it)")
     parser.add_argument("--cmake-arg", action="append", default=[], help="Extra CMake configure argument; repeatable")
     parser.add_argument("--target", default=os.environ.get("QWENTTS_CPP_CMAKE_TARGET", "qwen"))
     parser.add_argument("--jobs", type=int, default=int(os.environ.get("QWENTTS_CPP_BUILD_JOBS", os.cpu_count() or 2)))
@@ -242,6 +280,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.backend == "metal" and sys.platform != "darwin":
         parser.error("The Metal backend requires macOS")
+    if args.backend == "hip" and not sys.platform.startswith("linux"):
+        parser.error("The HIP backend is supported on Linux")
 
     root = Path(__file__).resolve().parents[1]
     source = Path(args.source).resolve()
@@ -274,6 +314,20 @@ def main() -> int:
             cmake_args.extend(["-DGGML_BLAS=OFF", "-DGGML_METAL=OFF"])
         elif args.backend == "cuda":
             cmake_args.extend(["-DGGML_CUDA=ON", f"-DCMAKE_CUDA_COMPILER={args.cuda_compiler}"])
+        elif args.backend == "hip":
+            cmake_args.extend([
+                "-DBUILD_SHARED_LIBS=ON", "-DGGML_HIP=ON", "-DGGML_HIP_GRAPHS=ON",
+                "-DGGML_BACKEND_DL=OFF",
+                "-DGGML_CUDA=OFF", "-DGGML_METAL=OFF", "-DGGML_BLAS=OFF",
+                "-DGGML_NATIVE=OFF", "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON",
+            ])
+            if args.hip_compiler:
+                cmake_args.append(f"-DCMAKE_HIP_COMPILER={args.hip_compiler}")
+            if args.hip_architectures:
+                cmake_args.append(f"-DCMAKE_HIP_ARCHITECTURES={args.hip_architectures}")
+            if args.rocm_path:
+                cmake_args.append(f"-DCMAKE_PREFIX_PATH={args.rocm_path}")
+                cmake_args.append(f"-DCMAKE_HIP_COMPILER_ROCM_ROOT={args.rocm_path}")
         elif args.backend == "metal":
             cmake_args.extend([
                 "-DGGML_METAL=ON", "-DGGML_METAL_EMBED_LIBRARY=ON",
@@ -294,6 +348,8 @@ def main() -> int:
               native_diagnostic_compatibility(source),
               metal_shader_compatibility(source, args.backend == "metal")):
             run(cmake_args)
+            if args.backend == "hip":
+                validate_hip_build_mode(build_dir)
             run(["cmake", "--build", str(build_dir), "--target", args.target, "-j", str(args.jobs)])
     copy_shared_libraries(build_dir, package_lib_dir)
     return 0

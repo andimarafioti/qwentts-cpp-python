@@ -41,6 +41,12 @@ Pull requests do not run the Linux wheel matrix. Do not run the validation
 workflow solely as a publishing prerequisite, because the publishing workflows
 perform fresh builds.
 
+The `.github/workflows/hip-wheel.yml` PR check builds one real Linux ROCm 7.2.4
+HIP runtime for gfx942 on a standard Ubuntu worker. It validates a local-version
+candidate wheel and clean installed loading without an AMD GPU. This is separate
+from the dispatch-only Linux matrix and does not publish wheels. AMD synthesis
+and device registration still require an AMD GPU environment.
+
 ## Updating the qwentts.cpp Pin
 
 To rebuild against a newer qwentts.cpp revision:
@@ -48,7 +54,8 @@ To rebuild against a newer qwentts.cpp revision:
 1. Resolve the latest upstream `master` commit to its full SHA.
 2. Update every default and event fallback for `QWENTTS_REF` in
    `.github/workflows/wheels.yml`, `.github/workflows/publish.yml`,
-   `.github/workflows/publish-hf-wheels.yml`, and `.github/workflows/metal-wheel.yml`.
+   `.github/workflows/publish-hf-wheels.yml`, `.github/workflows/metal-wheel.yml`,
+   and `.github/workflows/hip-wheel.yml`.
    Update `QWENTTS_NATIVE_REVISION` in `src/qwentts_cpp/_binding.py` and verify
    ctypes layouts with `QWENTTS_CPP_SOURCE=/path/to/source python -m pytest tests/test_native_abi.py`.
 3. Update the pinned revision and its summary in `README.md`.

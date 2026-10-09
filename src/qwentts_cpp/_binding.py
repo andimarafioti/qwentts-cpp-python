@@ -394,6 +394,8 @@ def _dependency_names() -> Sequence[str]:
         "libggml-cpu.so.0",
         "libggml-cuda.so",
         "libggml-cuda.so.0",
+        "libggml-hip.so",
+        "libggml-hip.so.0",
         "libggml-vulkan.so",
         "libggml-vulkan.so.0",
         "libggml-sycl.so",
