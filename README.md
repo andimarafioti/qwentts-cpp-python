@@ -144,6 +144,120 @@ delocate-wheel --require-archs arm64 -w wheelhouse -v dist/*.whl
 python -m twine check --strict wheelhouse/*.whl
 ```
 
+### AMD ROCm / HIP (Linux source builds)
+
+The build helper supports `--backend hip` or `QWENTTS_CPP_BACKEND=hip` on
+Linux. It enables `GGML_HIP` and HIP graphs, builds shared GGML libraries,
+and disables CUDA, Metal, BLAS, and host-specific CPU optimizations.
+The pinned GGML requires ROCm/HIP **6.1 or newer** at configure time; this is
+a build requirement, not a guarantee that every ROCm version or GPU works.
+[Issue #35](https://github.com/andimarafioti/qwentts-cpp-python/issues/35)
+records successful manual-build synthesis on **ROCm 7.2.4, AMD Instinct
+MI300X VF (`gfx942`)**, in
+`rocm/pytorch:rocm7.2.4_ubuntu24.04_py3.12_pytorch_release_2.9.1`.
+Other versions and architectures have not been validated. The helper and
+installed HIP wheel still require validation on that hardware; a manual
+build with an explicit library path does not establish wheel portability.
+
+Use a Linux ROCm development environment with a C/C++ compiler, CMake 3.21+,
+HIP clang++, hipBLAS, rocBLAS, and `patchelf` (for example, install `patchelf`
+with your system package manager). The matching AMD driver and GPU access
+must be available; containers need the host's ROCm device access as well.
+Build from this repository with the pinned native source:
+
+```bash
+python -m pip install cmake ninja build numpy huggingface-hub pytest
+git clone https://github.com/ServeurpersoCom/qwentts.cpp third_party/qwentts.cpp
+git -C third_party/qwentts.cpp checkout 6fae92914045cd83364d2845ceaa0f7969727319
+git -C third_party/qwentts.cpp submodule update --init --recursive
+
+python scripts/build_native.py \
+  --source third_party/qwentts.cpp --build-dir build/hip --backend hip \
+  --hip-compiler /opt/rocm/llvm/bin/clang++ \
+  --hip-architectures gfx942 --rocm-path /opt/rocm --jobs 8 --clean
+python -m pip install -e .
+QWENTTS_CPP_SOURCE="$PWD/third_party/qwentts.cpp" python -m pytest -q tests
+python -c "from qwentts_cpp import QwenLibrary; lib = QwenLibrary(); print(lib.path, lib.version())"
+```
+
+No `QWENTTS_CPP_LIBRARY` or build-directory `LD_LIBRARY_PATH` is needed:
+the helper copies `libqwen.so`, the GGML core/base/CPU libraries, and the
+versioned HIP backend into `qwentts_cpp/lib`. It resolves the HIP symlink
+to a regular `libggml-hip.so.0` file and requires successful `patchelf`
+relocation to `$ORIGIN`, so these libraries resolve their packaged siblings.
+The Python loader preloads the HIP backend before GGML and libqwen.
+Building native libraries is an explicit step; `pip install -e .` alone
+does not compile them.
+
+`--hip-compiler`, `--hip-architectures`, and `--rocm-path` default to
+`CMAKE_HIP_COMPILER`, `CMAKE_HIP_ARCHITECTURES`, and `ROCM_PATH`, respectively.
+When omitted, CMake/upstream discovers the toolkit and GPU targets. Use the
+target for your GPU; quote multiple targets such as `"gfx942;gfx950"`.
+The ROCm prefix sets CMake's package search prefix and HIP compiler ROCm root.
+For additional options, use `QWENTTS_CPP_CMAKE_ARGS` or repeat
+`--cmake-arg=...`; these are applied last, so
+`--cmake-arg=-DGGML_HIP_GRAPHS=OFF` disables graphs. Use a clean build when
+changing backends or toolkits.
+
+**System dependencies remain external.** This helper bundles qwentts/GGML
+libraries only. It does not bundle `libamdhip64`, `libhipblas`, `libhipblaslt`,
+`librocblas`, their transitive ROCm dependencies, or rocBLAS/Tensile data files.
+Install a matching ROCm runtime (the tested container supplies these), along
+with the usual Linux C/C++ and OpenMP runtime dependencies. The dynamic
+loader must find the system libraries through its configured search paths;
+if needed, set `LD_LIBRARY_PATH` to the system ROCm `lib`/`lib64` directories.
+Do not add the native source/build directory to that path for an installed
+package test. Inspect `ldd` on the packaged `.so` files and resolve any
+`not found` entries in the system environment.
+
+Run a GPU smoke test with local weights:
+
+```bash
+python scripts/smoke_stream.py \
+  --talker /path/to/qwen-talker-1.7b-voicedesign-BF16.gguf \
+  --codec /path/to/qwen-tokenizer-12hz-BF16.gguf \
+  --instruct "A warm, calm narrator." \
+  --text "Hello. This speech was generated on an AMD GPU." \
+  --require-rocm --full --output amd-smoke.wav
+```
+
+`--require-rocm` selects `GGML_BACKEND=ROCm0`, checks that the installed GGML
+registry contains that device with an AMD description, and fails before model
+loading if it is unavailable. It prints the library path, native revision,
+and device description, with native backend logs at info level. `--full`
+also runs buffered synthesis and writes `amd-smoke-full.wav`; streaming
+writes `amd-smoke.wav`. Both must be finite, nonsilent, mono 24 kHz audio;
+streaming must produce multiple chunks. Listen to both files to assess speech
+quality. Repeat with BF16/Q4_K_M and the Base/CustomVoice models described in
+the issue, using `--ref-spk` or `--speaker` for their conditioning. Device
+availability and GPU backend selection do not exclude CPU execution of
+individual unsupported operators.
+
+For a local wheel, use a separate local version in a disposable checkout:
+
+```bash
+python scripts/set_local_version.py rocm724  # changes local version metadata
+python -m build --wheel
+```
+
+This names the wheel `0.5.0+rocm724`; it is not a published download.
+ROCm publishing is not configured. Future ROCm distributions must use a
+separately selectable backend index/local version, such as a Hugging Face
+`rocm724` flavor. Do not publish ROCm and CUDA wheels with identical public
+package/version/platform tags to PyPI.
+
+Before distributing a HIP wheel, copy only the wheel, smoke script, and local
+weights to a fresh matching ROCm environment without the repository or native
+build tree. Install the wheel, unset `QWENTTS_CPP_LIBRARY` and
+`QWEN_LIBRARY_PATH`, and keep only declared system paths in `LD_LIBRARY_PATH`.
+Verify `QwenLibrary()` loads the installed package and run the AMD smoke test
+there. Run the full wrapper tests against the installed package (without a
+source `PYTHONPATH`), inspect wheel contents/dependency paths, and record
+GPU memory/backend logs and audio quality as described in issue #35.
+The Linux packaging regression uses small ELF fixtures to test relocation
+and clean installed loading; it does not validate real ROCm execution or
+establish that a wheel is self-contained.
+
 ### Native ABI compatibility
 
 The CI wheel build defaults to qwentts.cpp

@@ -6,6 +6,7 @@ import os
 import threading
 import weakref
 from types import SimpleNamespace
+from pathlib import Path
 from unittest.mock import Mock
 
 import numpy as np
@@ -28,6 +29,36 @@ from qwentts_cpp._binding import (
     QT_ABI_VERSION, QWENTTS_NATIVE_REVISION, QtInitParams, QtTTSParams,
     QtVoiceRef, _LogCallbackState,
 )
+
+
+def test_installed_hip_library_is_preloaded_before_ggml_and_qwen(monkeypatch, tmp_path):
+    import qwentts_cpp._binding as binding
+
+    monkeypatch.setattr(binding.sys, "platform", "linux")
+    monkeypatch.setattr(binding, "__file__", str(tmp_path / "qwentts_cpp" / "_binding.py"))
+    monkeypatch.delenv("QWENTTS_CPP_LIBRARY", raising=False)
+    monkeypatch.delenv("QWEN_LIBRARY_PATH", raising=False)
+    installed = tmp_path / "qwentts_cpp" / "lib"
+    installed.mkdir(parents=True)
+    names = ["libggml-base.so.0", "libggml-cpu.so.0", "libggml-hip.so.0", "libggml.so.0", "libqwen.so"]
+    for name in names:
+        (installed / name).touch()
+    loaded = []
+
+    def load(path, mode):
+        assert Path(path).parent == installed
+        loaded.append(Path(path).name)
+        if Path(path).name == "libggml.so.0":
+            assert "libggml-hip.so.0" in loaded
+        return Mock()
+
+    monkeypatch.setattr(binding.ctypes, "CDLL", load)
+    monkeypatch.setattr(QwenLibrary, "_validate_native_revision", Mock())
+    monkeypatch.setattr(QwenLibrary, "_bind", Mock())
+    library = QwenLibrary()
+    assert library.path == installed / "libqwen.so"
+    assert loaded == names
+    assert len(library._dependency_handles) == 4
 
 
 @pytest.mark.parametrize("version", [b"unknown", b"abcdef0 (2026-01-01)", b"", None, b"7df", b"7df559a (2026-07-17)"])
