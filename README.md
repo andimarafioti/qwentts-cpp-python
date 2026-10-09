@@ -144,7 +144,32 @@ delocate-wheel --require-archs arm64 -w wheelhouse -v dist/*.whl
 python -m twine check --strict wheelhouse/*.whl
 ```
 
-### AMD ROCm / HIP (Linux source builds)
+### AMD ROCm / HIP (Linux)
+
+The Hugging Face publisher builds a separate `+rocm724` wheel for **Linux
+x86_64, Ubuntu 24.04, ROCm 7.2.4, and MI300X (`gfx942`)**. After a successful
+Hugging Face publishing run, install the ROCm flavor explicitly:
+
+```bash
+python -m pip install --upgrade --only-binary=qwentts-cpp-python \
+  "qwentts-cpp-python==0.5.0+rocm724" \
+  -f https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/tree/main/whl/rocm724
+python -c "from qwentts_cpp import QwenLibrary; print(QwenLibrary().version())"
+```
+
+The wheel's `linux_x86_64` tag does not let pip check the Linux distribution,
+ROCm version, or GPU target. Use the documented environment; other AMD
+architectures, Linux distributions, and ROCm versions have not been validated.
+The required system ROCm libraries and assets are listed below. The wheel
+does not claim manylinux portability and is not a PyPI backend variant.
+
+The reusable HIP workflow builds a fresh wheel when called by the Hugging
+Face publisher, runs the same ABI and clean-installed checks as the PR job,
+and reports platform requirements with `auditwheel show`. The publisher
+includes the result in the `rocm724` flavor index alongside CPU/CUDA/Metal.
+Dispatch **Publish Hugging Face Wheels** with `backend=rocm724` to publish
+only a fresh ROCm build and preserve the other published flavor indexes and
+wheel files. The default `backend=all` rebuilds every supported backend.
 
 The build helper supports `--backend hip` or `QWENTTS_CPP_BACKEND=hip` on
 Linux. It enables `GGML_HIP` and HIP graphs, builds shared GGML libraries,
@@ -157,7 +182,8 @@ MI300X VF (`gfx942`)**, in
 `rocm/pytorch:rocm7.2.4_ubuntu24.04_py3.12_pytorch_release_2.9.1`.
 Other versions and architectures have not been validated. The **Linux HIP
 build and wheel validation** PR check compiles the real pinned source for
-`gfx942` in AMD's ROCm 7.2.4 development container on an Ubuntu GitHub worker.
+`gfx942` on an Ubuntu GitHub worker using AMD's versioned ROCm 7.2.4
+package repository and pinned compiler/BLAS development packages.
 It checks ABI layouts and wheel metadata, deletes the native source/build
 trees, checks installed ELF dependencies, and runs the wrapper tests against
 the installed wheel. The candidate `0.5.0+rocm724` wheel is saved as a CI
@@ -253,13 +279,13 @@ python scripts/set_local_version.py rocm724  # changes local version metadata
 python -m build --wheel
 ```
 
-This names the wheel `0.5.0+rocm724`; it is not a published download.
+This names the local wheel `0.5.0+rocm724`; building it does not publish it.
 The same local version is used for the HIP PR-check artifact; that artifact
 targets the ROCm 7.2.4 / Ubuntu 24.04 / gfx942 environment, without a
-manylinux portability claim. ROCm publishing is not configured. Future ROCm
-distributions must use a
-separately selectable backend index/local version, such as a Hugging Face
-`rocm724` flavor. Do not publish ROCm and CUDA wheels with identical public
+manylinux portability claim. The Hugging Face publisher calls the reusable
+HIP workflow to build its own fresh wheel; it does not reuse PR or validation
+artifacts. ROCm distributions use the separately selectable `rocm724` index
+and local version. Do not publish ROCm and CUDA wheels with identical public
 package/version/platform tags to PyPI.
 
 Before distributing a HIP wheel, copy only the wheel, smoke script, and local

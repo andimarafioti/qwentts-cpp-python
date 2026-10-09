@@ -4,7 +4,7 @@ import argparse
 import html
 import re
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 WHEEL_RE = re.compile(
@@ -27,6 +27,28 @@ def _version_from_wheel(path: Path) -> str:
     if not match:
         raise ValueError(f"Unexpected wheel filename: {path.name}")
     return match.group("version")
+
+
+def _existing_wheels(repo_id: str, replaced_flavors: set[str]) -> list[Path]:
+    """Read published filenames only, keeping the latest version per other flavor."""
+    from huggingface_hub import HfApi
+    from packaging.version import Version
+
+    files = HfApi().list_repo_files(repo_id, repo_type="dataset")
+    by_flavor: dict[str, list[Path]] = {}
+    for filename in files:
+        parts = PurePosixPath(filename).parts
+        if len(parts) != 3 or parts[0] != "whl" or not WHEEL_RE.match(parts[2]):
+            continue
+        wheel = Path(parts[2])
+        flavor = _flavor_from_wheel(wheel)
+        if parts[1] == flavor and flavor not in replaced_flavors:
+            by_flavor.setdefault(flavor, []).append(wheel)
+    selected = []
+    for wheels in by_flavor.values():
+        latest = max(Version(_version_from_wheel(wheel)) for wheel in wheels)
+        selected.extend(wheel for wheel in wheels if Version(_version_from_wheel(wheel)) == latest)
+    return selected
 
 
 def _write_links_page(path: Path, title: str, links: list[tuple[str, str]]) -> None:
@@ -60,11 +82,16 @@ def main() -> int:
     parser.add_argument("--dist", type=Path, required=True, help="Directory containing built wheels")
     parser.add_argument("--out", type=Path, required=True, help="Output directory to upload")
     parser.add_argument("--repo-id", required=True, help="HF dataset repo id used in generated README")
+    parser.add_argument("--preserve-existing", action="store_true",
+                        help="Keep indexes for other published flavors without downloading their wheels")
     args = parser.parse_args()
 
     wheels = sorted(args.dist.rglob("qwentts_cpp_python-*.whl"))
     if not wheels:
         raise SystemExit(f"No wheels found under {args.dist}")
+
+    existing = _existing_wheels(args.repo_id, {_flavor_from_wheel(wheel) for wheel in wheels}) \
+        if args.preserve_existing else []
 
     if args.out.exists():
         shutil.rmtree(args.out)
@@ -84,6 +111,15 @@ def main() -> int:
         target = target_dir / wheel.name
         shutil.copy2(wheel, target)
         by_flavor.setdefault(flavor, []).append(target)
+
+    for wheel in existing:
+        flavor = _flavor_from_wheel(wheel)
+        versions_by_flavor[flavor] = _version_from_wheel(wheel)
+        target_dir = wheel_root / flavor
+        target_dir.mkdir(parents=True, exist_ok=True)
+        # These links address files already on the Hub. Only new local wheels
+        # are copied and uploaded; existing wheel payloads remain untouched.
+        by_flavor.setdefault(flavor, []).append(target_dir / wheel.name)
 
     flavor_links: list[tuple[str, str]] = []
     for flavor in sorted(by_flavor):
@@ -123,13 +159,18 @@ def main() -> int:
                 ],
                 "```",
                 "",
-                "The wheels do not bundle CUDA runtime or cuBLAS libraries. Use a base image or",
-                "system installation that provides the matching CUDA runtime.",
+                "CUDA wheels require the matching system CUDA runtime and cuBLAS libraries.",
+                "ROCm wheels require the matching system ROCm runtime, hipBLAS, hipBLASLt,",
+                "rocBLAS, and rocBLAS/Tensile assets; these are not bundled in the wheel.",
+                "The `rocm724` wheel targets Linux x86_64, Ubuntu 24.04, ROCm 7.2.4, and",
+                "MI300X (`gfx942`). Its `linux_x86_64` tag does not check the Linux distribution",
+                "or GPU architecture; install it only in the documented environment.",
+                "It does not claim manylinux portability or support for other AMD targets.",
                 "",
             ]
         )
     )
-    print(f"Prepared {sum(len(v) for v in by_flavor.values())} wheels for {', '.join(sorted(by_flavor))}")
+    print(f"Prepared {len(wheels)} new wheels and indexes for {', '.join(sorted(by_flavor))}")
     return 0
 
 

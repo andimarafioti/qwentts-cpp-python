@@ -25,10 +25,14 @@ wheels from the pinned qwentts.cpp source.
 Additional backend-specific wheels can be published to Hugging Face Hub by
 manually dispatching `.github/workflows/publish-hf-wheels.yml`. That workflow
 builds local-version variants such as `0.2.0+cpu`, `0.2.0+cu124`,
-`0.2.0+cu128`, `0.2.0+cu130`, and `0.3.1+metal`, prepares static `--find-links` pages,
+`0.2.0+cu128`, `0.2.0+cu130`, `0.3.1+metal`, and `0.5.0+rocm724`, prepares static `--find-links` pages,
 creates the public dataset repo if needed, and uploads the wheel index using
 the `HF_TOKEN` repository secret. Do not upload those local-version variants to
 PyPI.
+
+The Hugging Face publisher's `backend=rocm724` dispatch selection builds
+only a fresh ROCm wheel and preserves the other published flavor indexes and
+wheel files using Hub metadata. The default `backend=all` rebuilds all flavors.
 
 The `+metal` flavor is a macOS 14+ arm64 wheel with embedded Metal shaders and
 bundled native dylibs. The reusable `.github/workflows/metal-wheel.yml` builds,
@@ -44,8 +48,12 @@ perform fresh builds.
 The `.github/workflows/hip-wheel.yml` PR check builds one real Linux ROCm 7.2.4
 HIP runtime for gfx942 on a standard Ubuntu worker. It validates a local-version
 candidate wheel and clean installed loading without an AMD GPU. This is separate
-from the dispatch-only Linux matrix and does not publish wheels. AMD synthesis
-and device registration still require an AMD GPU environment.
+from the dispatch-only Linux matrix and does not publish wheels itself. The
+Hugging Face publisher calls this reusable workflow to build a fresh
+`+rocm724` wheel for Linux x86_64 / Ubuntu 24.04 / gfx942, with external ROCm
+runtime dependencies and no manylinux portability claim. AMD synthesis and
+device registration must be validated on AMD hardware before publishing a
+new ROCm build configuration or native revision.
 
 ## Updating the qwentts.cpp Pin
 
