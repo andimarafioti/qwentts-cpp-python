@@ -143,8 +143,34 @@ def relocate_macos_libraries(copied: list[Path], build_dir: Path) -> None:
         run(["codesign", "--force", "--sign", "-", str(path)])
 
 
+def validate_hip_build_mode(build_dir: Path) -> None:
+    """Reject module backends; the package supports linked HIP backends only."""
+    error = (
+        "Dynamic HIP backends (GGML_BACKEND_DL=ON / libggml-hip.so modules) "
+        "are not supported by this package. Rebuild with GGML_BACKEND_DL=OFF "
+        "and --clean to produce the linked, versioned HIP runtime."
+    )
+    cache = build_dir / "CMakeCache.txt"
+    if cache.is_file():
+        for line in cache.read_text().splitlines():
+            name, separator, value = line.partition("=")
+            if separator and name.split(":", 1)[0] == "GGML_BACKEND_DL":
+                value = value.upper()
+                disabled = ("", "0", "OFF", "NO", "FALSE", "N", "IGNORE", "NOTFOUND")
+                if value not in disabled and not value.endswith("-NOTFOUND"):
+                    raise SystemExit(error)
+    module = find_first(build_dir, ["libggml-hip.so"])
+    versioned = find_first(build_dir, ["libggml-hip.so.0", "libggml-hip.so.*"])
+    # A normal shared build also has an unversioned linker symlink. Accept
+    # that alias only when it resolves to the versioned runtime we package.
+    if module and (versioned is None or module.resolve() != versioned.resolve()):
+        raise SystemExit(error)
+
+
 def copy_shared_libraries(build_dir: Path, package_lib_dir: Path) -> None:
     hip_library = find_first(build_dir, ["libggml-hip.so.0", "libggml-hip.so.*"])
+    if sys.platform.startswith("linux") and find_first(build_dir, ["libggml-hip.so", "libggml-hip.so.*"]):
+        validate_hip_build_mode(build_dir)
     patchelf = shutil.which("patchelf")
     if sys.platform.startswith("linux") and hip_library and not patchelf:
         raise SystemExit("Packaging HIP libraries requires patchelf to set sibling-library RPATHs")
@@ -291,6 +317,7 @@ def main() -> int:
         elif args.backend == "hip":
             cmake_args.extend([
                 "-DBUILD_SHARED_LIBS=ON", "-DGGML_HIP=ON", "-DGGML_HIP_GRAPHS=ON",
+                "-DGGML_BACKEND_DL=OFF",
                 "-DGGML_CUDA=OFF", "-DGGML_METAL=OFF", "-DGGML_BLAS=OFF",
                 "-DGGML_NATIVE=OFF", "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON",
             ])
@@ -321,6 +348,8 @@ def main() -> int:
               native_diagnostic_compatibility(source),
               metal_shader_compatibility(source, args.backend == "metal")):
             run(cmake_args)
+            if args.backend == "hip":
+                validate_hip_build_mode(build_dir)
             run(["cmake", "--build", str(build_dir), "--target", args.target, "-j", str(args.jobs)])
     copy_shared_libraries(build_dir, package_lib_dir)
     return 0

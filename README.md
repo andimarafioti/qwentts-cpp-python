@@ -199,6 +199,13 @@ For additional options, use `QWENTTS_CPP_CMAKE_ARGS` or repeat
 `--cmake-arg=-DGGML_HIP_GRAPHS=OFF` disables graphs. Use a clean build when
 changing backends or toolkits.
 
+HIP packaging supports linked, versioned backends with `GGML_BACKEND_DL=OFF`
+(set by the helper). Dynamic module backends with `GGML_BACKEND_DL=ON` are
+rejected after configuration, before compilation. Copy-only `--skip-build`
+runs also reject an unversioned HIP module before replacing packaged libraries.
+Rebuild with `--clean` and `GGML_BACKEND_DL=OFF` if using an existing dynamic
+backend build directory.
+
 **System dependencies remain external.** This helper bundles qwentts/GGML
 libraries only. It does not bundle `libamdhip64`, `libhipblas`, `libhipblaslt`,
 `librocblas`, their transitive ROCm dependencies, or rocBLAS/Tensile data files.

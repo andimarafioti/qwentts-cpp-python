@@ -40,6 +40,7 @@ def test_hip_configuration(monkeypatch, tmp_path, from_env):
     assert build_native.main() == 0
     configure, build = [call.args[0] for call in run.call_args_list]
     for flag in ("-DBUILD_SHARED_LIBS=ON", "-DGGML_HIP=ON", "-DGGML_CUDA=OFF",
+                 "-DGGML_BACKEND_DL=OFF",
                  "-DGGML_METAL=OFF", "-DGGML_BLAS=OFF", "-DGGML_NATIVE=OFF",
                  "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON", "-DCMAKE_INSTALL_RPATH=$ORIGIN",
                  "-DCMAKE_HIP_COMPILER=/custom/rocm/llvm/bin/clang++",
@@ -70,6 +71,7 @@ def test_copy_versioned_hip_library_and_relocate_siblings(monkeypatch, tmp_path)
     versioned = build / "libggml-hip.so.0.25.3"
     versioned.write_bytes(b"hip")
     (build / "libggml-hip.so.0").symlink_to(versioned.name)
+    (build / "libggml-hip.so").symlink_to("libggml-hip.so.0")
     run = Mock()
     monkeypatch.setattr(build_native, "run", run)
     package = tmp_path / "installed" / "lib"
@@ -92,6 +94,69 @@ def test_hip_packaging_requires_successful_relocation(monkeypatch, tmp_path, mis
     monkeypatch.setattr(build_native, "run", Mock(side_effect=subprocess.CalledProcessError(1, "patchelf")))
     with pytest.raises(SystemExit if missing_tool else subprocess.CalledProcessError):
         build_native.copy_shared_libraries(tmp_path, tmp_path / "package")
+
+
+@pytest.mark.parametrize("from_env", [False, True])
+def test_dynamic_hip_rejected_after_configure_before_build(monkeypatch, tmp_path, from_env):
+    monkeypatch.setattr(sys, "platform", "linux")
+    build = tmp_path / "build"
+    argv = ["build_native.py", "--backend", "hip", "--source", str(tmp_path), "--build-dir", str(build)]
+    monkeypatch.delenv("QWENTTS_CPP_CMAKE_ARGS", raising=False)
+    if from_env:
+        monkeypatch.setenv("QWENTTS_CPP_CMAKE_ARGS", "-DGGML_BACKEND_DL:BOOL=ON")
+    else:
+        argv.append("--cmake-arg=-DGGML_BACKEND_DL:BOOL=ON")
+    monkeypatch.setattr(sys, "argv", argv)
+    for name in ("native_logging_compatibility", "native_diagnostic_compatibility", "metal_shader_compatibility"):
+        monkeypatch.setattr(build_native, name, lambda *args: nullcontext())
+
+    def configure(command):
+        assert command.index("-DGGML_BACKEND_DL=OFF") < command.index("-DGGML_BACKEND_DL:BOOL=ON")
+        (build / "CMakeCache.txt").write_text("GGML_BACKEND_DL:BOOL=ON\n")
+
+    run = Mock(side_effect=configure)
+    copy = Mock()
+    monkeypatch.setattr(build_native, "run", run)
+    monkeypatch.setattr(build_native, "copy_shared_libraries", copy)
+    with pytest.raises(SystemExit, match="Dynamic HIP backends.*not supported"):
+        build_native.main()
+    run.assert_called_once()
+    copy.assert_not_called()
+
+
+@pytest.mark.parametrize("stale_versioned", [False, True])
+def test_unversioned_hip_module_rejected_without_replacing_package(monkeypatch, tmp_path, stale_versioned):
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(build_native, "__file__", str(tmp_path / "project" / "scripts" / "build_native.py"))
+    build = tmp_path / "build"
+    build.mkdir()
+    (build / "libqwen.so").write_bytes(b"new qwen")
+    (build / "libggml-hip.so").write_bytes(b"HIP module")
+    if stale_versioned:
+        (build / "libggml-hip.so.0.25.3").write_bytes(b"old linked HIP")
+    package = tmp_path / "project" / "src" / "qwentts_cpp" / "lib"
+    package.mkdir(parents=True)
+    (package / "libqwen.so").write_bytes(b"existing qwen")
+    monkeypatch.setattr(sys, "argv", [
+        "build_native.py", "--backend", "hip", "--skip-build", "--build-dir", str(build),
+    ])
+    run = Mock()
+    monkeypatch.setattr(build_native, "run", run)
+    with pytest.raises(SystemExit, match="Dynamic HIP backends.*not supported"):
+        build_native.main()
+    run.assert_not_called()
+    assert (package / "libqwen.so").read_bytes() == b"existing qwen"
+    assert [path.name for path in package.iterdir()] == ["libqwen.so"]
+
+
+@pytest.mark.parametrize("value", ["ON", "YES", "1", "TRUE"])
+def test_dynamic_hip_cache_rejected_even_with_versioned_library(monkeypatch, tmp_path, value):
+    monkeypatch.setattr(sys, "platform", "linux")
+    (tmp_path / "CMakeCache.txt").write_text(f"GGML_BACKEND_DL:BOOL={value}\n")
+    (tmp_path / "libggml-hip.so.0.25.3").touch()
+    with pytest.raises(SystemExit, match="Dynamic HIP backends.*not supported"):
+        build_native.copy_shared_libraries(tmp_path, tmp_path / "package")
+    assert not (tmp_path / "package").exists()
 
 
 def test_missing_tokenizer_remains_an_error(tmp_path):
