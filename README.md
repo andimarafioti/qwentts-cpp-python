@@ -155,9 +155,15 @@ a build requirement, not a guarantee that every ROCm version or GPU works.
 records successful manual-build synthesis on **ROCm 7.2.4, AMD Instinct
 MI300X VF (`gfx942`)**, in
 `rocm/pytorch:rocm7.2.4_ubuntu24.04_py3.12_pytorch_release_2.9.1`.
-Other versions and architectures have not been validated. The helper and
-installed HIP wheel still require validation on that hardware; a manual
-build with an explicit library path does not establish wheel portability.
+Other versions and architectures have not been validated. The **Linux HIP
+build and wheel validation** PR check compiles the real pinned source for
+`gfx942` in AMD's ROCm 7.2.4 development container on an Ubuntu GitHub worker.
+It checks ABI layouts and wheel metadata, deletes the native source/build
+trees, checks installed ELF dependencies, and runs the wrapper tests against
+the installed wheel. The candidate `0.5.0+rocm724` wheel is saved as a CI
+artifact. These workers have no AMD GPU; synthesis and device registration
+still require validation on AMD hardware. A manual build with an explicit
+library path does not establish wheel portability.
 
 Use a Linux ROCm development environment with a C/C++ compiler, CMake 3.21+,
 HIP clang++, hipBLAS, rocBLAS, and `patchelf` (for example, install `patchelf`
@@ -248,7 +254,10 @@ python -m build --wheel
 ```
 
 This names the wheel `0.5.0+rocm724`; it is not a published download.
-ROCm publishing is not configured. Future ROCm distributions must use a
+The same local version is used for the HIP PR-check artifact; that artifact
+targets the ROCm 7.2.4 / Ubuntu 24.04 / gfx942 environment, without a
+manylinux portability claim. ROCm publishing is not configured. Future ROCm
+distributions must use a
 separately selectable backend index/local version, such as a Hugging Face
 `rocm724` flavor. Do not publish ROCm and CUDA wheels with identical public
 package/version/platform tags to PyPI.
