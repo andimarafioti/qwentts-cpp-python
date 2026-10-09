@@ -180,7 +180,8 @@ MI300X VF (`gfx942`)**, in
 `rocm/pytorch:rocm7.2.4_ubuntu24.04_py3.12_pytorch_release_2.9.1`.
 Other versions and architectures have not been validated. The **Linux HIP
 build and wheel validation** PR check compiles the real pinned source for
-`gfx942` in AMD's ROCm 7.2.4 development container on an Ubuntu GitHub worker.
+`gfx942` on an Ubuntu GitHub worker using AMD's versioned ROCm 7.2.4
+package repository and pinned compiler/BLAS development packages.
 It checks ABI layouts and wheel metadata, deletes the native source/build
 trees, checks installed ELF dependencies, and runs the wrapper tests against
 the installed wheel. The candidate `0.5.0+rocm724` wheel is saved as a CI

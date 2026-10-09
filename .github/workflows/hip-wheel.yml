@@ -27,12 +27,12 @@ jobs:
     timeout-minutes: 60
     env:
       QWENTTS_REF: ${{ inputs.qwentts_ref || '6fae92914045cd83364d2845ceaa0f7969727319' }}
-      ROCM_IMAGE: rocm/dev-ubuntu-24.04:7.2.4-complete@sha256:92f309c51b52cef8762867848f1529dee821624f23cd5df38455e819538f762f
+      ROCM_PATH: /opt/rocm-7.2.4
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
-      - name: Free space for the ROCm development image
+      - name: Free space for the ROCm toolchain
         run: |
           sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet
           sudo apt-get clean
@@ -44,70 +44,76 @@ jobs:
           git -C third_party/qwentts.cpp fetch --depth 1 origin "$QWENTTS_REF"
           git -C third_party/qwentts.cpp checkout --detach FETCH_HEAD
           git -C third_party/qwentts.cpp submodule update --init --recursive --depth 1
-      - name: Start the pinned ROCm build container
+      - name: Install the versioned ROCm 7.2.4 toolchain
         run: |
-          # No GPU devices are passed through: gfx942 is an explicit compile target.
-          docker run --detach --name qwentts-hip \
-            -v "$GITHUB_WORKSPACE:/workspace" -w /workspace \
-            "$ROCM_IMAGE" sleep infinity
-          docker exec qwentts-hip bash -euxo pipefail -c '
-            apt-get update
-            apt-get install -y --no-install-recommends \
-              build-essential cmake ninja-build patchelf python3 python3-venv git ca-certificates
-            git config --global --add safe.directory /workspace/third_party/qwentts.cpp
-            git config --global --add safe.directory /workspace/third_party/qwentts.cpp/ggml
-            python3 -m venv /opt/hip-test
-            /opt/hip-test/bin/python -m pip install "setuptools>=77" wheel build twine auditwheel pytest numpy huggingface-hub
-            # These remain system dependencies; no native build path is added.
-            printf "/opt/rocm/lib\n/opt/rocm/lib64\n" > /etc/ld.so.conf.d/qwentts-rocm.conf
-            ldconfig
-            /opt/rocm/bin/hipconfig --version
-            /opt/rocm/llvm/bin/clang++ --version
-          '
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build patchelf python3 python3-venv git curl ca-certificates gnupg
+          sudo mkdir -p /etc/apt/keyrings
+          curl --fail --silent --show-error --retry 3 https://repo.radeon.com/rocm/rocm.gpg.key \
+            | gpg --dearmor | sudo tee /etc/apt/keyrings/qwentts-rocm.gpg > /dev/null
+          echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/qwentts-rocm.gpg] https://repo.radeon.com/rocm/apt/7.2.4 noble main" \
+            | sudo tee /etc/apt/sources.list.d/qwentts-rocm.list
+          printf "Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n" \
+            | sudo tee /etc/apt/preferences.d/qwentts-rocm
+          sudo apt-get update
+          # Install the compiler and linked BLAS dependencies, without a GPU driver.
+          sudo apt-get install -y --no-install-recommends \
+            rocm-hip-runtime-dev=7.2.4.70204-93~24.04 \
+            hipblas-dev=3.2.0.70204-93~24.04 \
+            hipblaslt-dev=1.2.2.70204-93~24.04 \
+            rocblas-dev=5.2.0.70204-93~24.04
+          printf "%s/lib\n%s/lib64\n" "$ROCM_PATH" "$ROCM_PATH" \
+            | sudo tee /etc/ld.so.conf.d/qwentts-rocm.conf
+          sudo ldconfig
+          python3 -m venv "$RUNNER_TEMP/hip-test"
+          "$RUNNER_TEMP/hip-test/bin/python" -m pip install \
+            "setuptools>=77" wheel build twine auditwheel pytest numpy huggingface-hub
+          echo "HIP_TEST_PYTHON=$RUNNER_TEMP/hip-test/bin/python" >> "$GITHUB_ENV"
+          "$ROCM_PATH/bin/hipconfig" --version
+          "$ROCM_PATH/llvm/bin/clang++" --version
+          dpkg-query -W rocm-core rocm-llvm hip-dev hipblas-dev hipblaslt-dev rocblas-dev
       - name: Build the real HIP runtime and local-version wheel
         run: |
-          docker exec qwentts-hip bash -euxo pipefail -c '
-            /opt/hip-test/bin/python scripts/build_native.py \
-              --source third_party/qwentts.cpp --build-dir build/hip --backend hip \
-              --hip-compiler /opt/rocm/llvm/bin/clang++ \
-              --hip-architectures gfx942 --rocm-path /opt/rocm --jobs 2 --clean \
-              --cmake-arg=-G --cmake-arg=Ninja
-            test -f src/qwentts_cpp/lib/libggml-hip.so.0
-            /opt/hip-test/bin/python scripts/set_local_version.py rocm724
-            /opt/hip-test/bin/python -m build --wheel
-            /opt/hip-test/bin/python -m twine check --strict dist/*.whl
-            # Report the ABI floor and external dependencies. This wheel keeps
-            # its linux_x86_64 tag; it does not claim manylinux portability.
-            /opt/hip-test/bin/python -m auditwheel show dist/*.whl
-            PYTHONPATH=src QWENTTS_CPP_SOURCE=third_party/qwentts.cpp \
-              /opt/hip-test/bin/python -m pytest -q tests/test_native_abi.py tests/test_build_native.py
-          '
+          set -euo pipefail
+          "$HIP_TEST_PYTHON" scripts/build_native.py \
+            --source third_party/qwentts.cpp --build-dir build/hip --backend hip \
+            --hip-compiler "$ROCM_PATH/llvm/bin/clang++" \
+            --hip-architectures gfx942 --rocm-path "$ROCM_PATH" --jobs 2 --clean \
+            --cmake-arg=-G --cmake-arg=Ninja
+          test -f src/qwentts_cpp/lib/libggml-hip.so.0
+          "$HIP_TEST_PYTHON" scripts/set_local_version.py rocm724
+          "$HIP_TEST_PYTHON" -m build --wheel
+          "$HIP_TEST_PYTHON" -m twine check --strict dist/*.whl
+          # Report the ABI floor and external dependencies. This wheel keeps
+          # its linux_x86_64 tag; it does not claim manylinux portability.
+          "$HIP_TEST_PYTHON" -m auditwheel show dist/*.whl
+          PYTHONPATH=src QWENTTS_CPP_SOURCE=third_party/qwentts.cpp \
+            "$HIP_TEST_PYTHON" -m pytest -q tests/test_native_abi.py tests/test_build_native.py
       - name: Validate the installed HIP wheel without native source or build trees
         run: |
-          docker exec qwentts-hip bash -euxo pipefail -c '
-            /opt/hip-test/bin/python -m pip install --no-deps dist/*.whl
-            rm -rf build third_party src/qwentts_cpp/lib
-            unset QWENTTS_CPP_LIBRARY QWEN_LIBRARY_PATH LD_LIBRARY_PATH PYTHONPATH
-            /opt/hip-test/bin/python -I -c "from pathlib import Path; from qwentts_cpp import QwenLibrary; lib = QwenLibrary(); print(lib.path, lib.version()); assert lib.path.is_relative_to(Path(\"/opt/hip-test\")); assert any(Path(dep._name).name == \"libggml-hip.so.0\" for dep in lib._dependency_handles)"
-            # Inspect actual ELF dependencies after removing the build trees.
-            for library in /opt/hip-test/lib/python*/site-packages/qwentts_cpp/lib/*.so*; do
-              test "$(patchelf --print-rpath "$library")" = '\''$ORIGIN'\''
-              dependencies="$(ldd "$library")"
-              printf "%s\n" "$dependencies"
-              if printf "%s\n" "$dependencies" | grep -E "not found|/workspace/"; then
-                exit 1
-              fi
-            done
-            # Native integration tests use the installed path, after the default
-            # loader above has independently succeeded without any override.
-            export QWENTTS_CPP_LIBRARY="$(/opt/hip-test/bin/python -I -c "from qwentts_cpp import QwenLibrary; print(QwenLibrary().path)")"
-            /opt/hip-test/bin/python -m pytest -q tests
-          '
+          set -euo pipefail
+          "$HIP_TEST_PYTHON" -m pip install --no-deps dist/*.whl
+          rm -rf build third_party src/qwentts_cpp/lib
+          unset QWENTTS_CPP_LIBRARY QWEN_LIBRARY_PATH LD_LIBRARY_PATH PYTHONPATH
+          "$HIP_TEST_PYTHON" -I -c "import sys; from pathlib import Path; from qwentts_cpp import QwenLibrary; lib = QwenLibrary(); print(lib.path, lib.version()); assert lib.path.is_relative_to(Path(sys.prefix)); assert any(Path(dep._name).name == \"libggml-hip.so.0\" for dep in lib._dependency_handles)"
+          # Inspect actual ELF dependencies after removing the build trees.
+          package_lib="$("$HIP_TEST_PYTHON" -I -c "from qwentts_cpp import QwenLibrary; print(QwenLibrary().path.parent)")"
+          for library in "$package_lib"/*.so*; do
+            test "$(patchelf --print-rpath "$library")" = '$ORIGIN'
+            dependencies="$(ldd "$library")"
+            printf "%s\n" "$dependencies"
+            if printf "%s\n" "$dependencies" | grep -E "not found|$GITHUB_WORKSPACE/(build|third_party)/"; then
+              exit 1
+            fi
+          done
+          # Native integration tests use the installed path, after the default
+          # loader above has independently succeeded without any override.
+          export QWENTTS_CPP_LIBRARY="$("$HIP_TEST_PYTHON" -I -c "from qwentts_cpp import QwenLibrary; print(QwenLibrary().path)")"
+          "$HIP_TEST_PYTHON" -m pytest -q tests
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.artifact_name || 'hip-wheel-rocm724-gfx942-linux-x86_64' }}
           path: dist/*.whl
           retention-days: 7
-      - name: Remove the build container
-        if: always()
-        run: docker rm --force qwentts-hip || true
